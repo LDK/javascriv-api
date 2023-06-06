@@ -55,7 +55,7 @@ router.post('/user/login', async (req, res) => {
   }
 
   // Signing a JWT using the secret key from the environment variables
-  const token = jwt.sign({ id: existingUser.id, username: existingUser.username }, process.env.SECRET_KEY as string, { expiresIn: '1h' });
+  const token = jwt.sign({ id: existingUser.id, username: existingUser.username }, process.env.SECRET_KEY as string, { expiresIn: '720h' });
 
   // Return user data and token
   return res.status(200).json({ user: existingUser, token });

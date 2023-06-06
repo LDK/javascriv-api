@@ -5,8 +5,10 @@ import { User } from '../entity/User';
 import { ProjectFile } from '@bit/dcompose.javascriv-types.project-types';
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
-import { expressjwt, Request as JWTRequest } from "express-jwt";
+import { expressjwt, Params, Request as JWTRequest } from "express-jwt";
 import { In } from 'typeorm';
+
+const jwtProps:Params = { secret: process.env.SECRET_KEY as string, algorithms: ["HS256"] };
 
 const router = Router();
 
@@ -17,7 +19,7 @@ interface ProjectRequest {
   files: ProjectFile[];
   creator: string;
   collaborators: number[];
-  id: string;
+  id?: string;
 }
 
 router.post('/user/project', async (req, res) => {
@@ -90,7 +92,7 @@ router.post('/user/project', async (req, res) => {
   return res.status(201).send(project);
 });
 
-router.get('/user/projects', expressjwt({ secret: process.env.SECRET_KEY as string, algorithms: ["HS256"] }), async (req: JWTRequest<any>, res) => {
+router.get('/user/projects', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   
   const username = req.auth?.username;
   console.log('username', username);
@@ -112,7 +114,7 @@ router.get('/user/projects', expressjwt({ secret: process.env.SECRET_KEY as stri
   return res.status(200).json({ createdProjects, collaboratorProjects });
 });
 
-router.get('/user/project/:id', expressjwt({ secret: process.env.SECRET_KEY as string, algorithms: ["HS256"] }), async (req: JWTRequest, res) => {
+router.get('/user/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   const projectId = req.params.id;
 
   // Get the Project Repository from the DataSource
