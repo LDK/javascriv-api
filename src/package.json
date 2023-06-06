@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@bit/dcompose.javascriv-types.project-types": "file:./components/project-types"
+  }
+}
