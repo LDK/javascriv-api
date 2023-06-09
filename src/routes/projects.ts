@@ -6,7 +6,8 @@ import { ProjectFile } from '@bit/dcompose.javascriv-types.project-types';
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { expressjwt, Params, Request as JWTRequest } from "express-jwt";
-import { In } from 'typeorm';
+import { FindOptionsWhere, In } from 'typeorm';
+import { ProjectSettings } from '../shm/project-types/ProjectTypes';
 
 const jwtProps:Params = { secret: process.env.SECRET_KEY as string, algorithms: ["HS256"] };
 
@@ -76,20 +77,57 @@ router.post('/user/project', async (req, res) => {
 
   const collaboratorUsers = await userRepository.findBy({ id: In(collaborators) });
 
-  const project = new Project();
-  project.title = title;
-  project.settings = JSON.parse(settings) || {};
-  project.openFilePath = openFilePath;
-  project.creator = creator;
-  project.collaborators = collaboratorUsers;
+  // If id is present, update the project instead of creating a new one
 
-  await projectRepository.save(project);
+  if (id) {
+    // Get the project from the database
+    const projectToUpdate = await projectRepository.findOne({ where: { id: parseInt(id) }, relations: ["files", "collaborators"] });
 
-  for (const file of files) {
-    await saveFile(file, null, project);
+    // If the project does not exist, return an error
+    if (!projectToUpdate) {
+      return res.status(404).send('Project not found');
+    }
+
+    // Update the project details
+    projectToUpdate.title = title;
+    projectToUpdate.settings = (JSON.parse(settings) || {}) as ProjectSettings;
+    projectToUpdate.openFilePath = openFilePath;
+    projectToUpdate.creator = creator;
+
+    // Update the collaborators
+    projectToUpdate.collaborators = collaboratorUsers;
+
+    // Save the updated project
+    await projectRepository.save(projectToUpdate);
+
+    // Update the files
+    // Deleting old files and adding new ones
+    const deleteCriteria:FindOptionsWhere<File> = { project: { id: parseInt(id) } };
+    await fileRepository.delete(deleteCriteria);
+
+    for (const file of files) {
+      await saveFile(file, null, projectToUpdate);
+    }
+
+    return res.status(200).send(projectToUpdate);
+
+  } else {
+    const project = new Project();
+
+    project.title = title;
+    project.settings = JSON.parse(settings) || {};
+    project.openFilePath = openFilePath;
+    project.creator = creator;
+    project.collaborators = collaboratorUsers;
+
+    await projectRepository.save(project);
+
+    for (const file of files) {
+      await saveFile(file, null, project);
+    }
+
+    return res.status(201).send(project);
   }
-
-  return res.status(201).send(project);
 });
 
 router.get('/user/projects', expressjwt(jwtProps), async (req: JWTRequest, res) => {
