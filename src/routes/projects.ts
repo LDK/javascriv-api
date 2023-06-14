@@ -133,7 +133,6 @@ router.post('/user/project', async (req, res) => {
 router.get('/user/projects', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   
   const username = req.auth?.username;
-  console.log('username', username);
 
   // Get the Project Repository from the DataSource
   const dataSource = await getDataSource();
