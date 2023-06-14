@@ -13,7 +13,11 @@ const dataSource = getDataSource();
 dataSource.then(() => {
   const app = express();
 
-  var allowedOrigins = ['http://localhost:3000', 'https://javascriv.electric-bungalow.com'];
+  var allowedOrigins = process.env.DB_ALLOWED_ORIGINS
+  ? process.env.DB_ALLOWED_ORIGINS.split(',')
+  : [];
+
+  console.log("Allowed origins: ", allowedOrigins)
 
   app.use(cors({
     origin: function(origin, callback){
