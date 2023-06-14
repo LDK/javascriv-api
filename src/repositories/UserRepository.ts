@@ -5,6 +5,6 @@ const dataSource = getDataSource();
 
 export const UserRepository = dataSource.then(ds => ds.getRepository(User).extend({
   findByName(name: string) {
-    return this.findOne({ where: { username: name } }); // <- change this line
+    return this.findOne({ where: { username: name } });
   }
 }));

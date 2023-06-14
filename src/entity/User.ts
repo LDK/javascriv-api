@@ -7,7 +7,7 @@ import {
 } from 'typeorm';
 
 @Entity()
-@Unique(["username"])
+@Unique(["username", "email"])
 export class User {
 
   @PrimaryGeneratedColumn()
@@ -15,6 +15,9 @@ export class User {
 
   @Column()
   username: string;
+
+  @Column()
+  email: string;
 
   @Column()
   passwordHash: string;
