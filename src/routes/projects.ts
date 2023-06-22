@@ -151,7 +151,7 @@ router.get('/user/projects', expressjwt(jwtProps), async (req: JWTRequest, res) 
   return res.status(200).json({ createdProjects, collaboratorProjects });
 });
 
-router.get('/user/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) => {
+router.get('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   const projectId = req.params.id;
 
   // Get the Project Repository from the DataSource
