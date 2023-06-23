@@ -14,7 +14,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@bit/dcompose.javascriv-types.project-types": "file:./components/project-types",
     "bcrypt": "^5.1.0",
     "body-parser": "^1.20.2",
     "cors": "^2.8.5",
@@ -24,7 +23,9 @@
     "pg": "^8.11.0",
     "pg-promise": "^11.5.0",
     "reflect-metadata": "^0.1.13",
-    "typeorm": "^0.3.16"
+    "typeorm": "^0.3.16",
+    "@bit/dcompose.javascriv-types.javascriv-types": "file:./components/javascriv-types",
+    "@bit/dcompose.javascriv-types.editor-fonts": "file:./components/editor-fonts"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.0",
