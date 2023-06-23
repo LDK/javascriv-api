@@ -11,6 +11,9 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getDataSource = void 0;
 const typeorm_1 = require("typeorm");
+const User_1 = require("./entity/User");
+const Project_1 = require("./entity/Project");
+const File_1 = require("./entity/File");
 let dataSource = null;
 const getDataSource = () => __awaiter(void 0, void 0, void 0, function* () {
     if (!dataSource) {
@@ -25,9 +28,7 @@ const getDataSource = () => __awaiter(void 0, void 0, void 0, function* () {
         dataSource = new typeorm_1.DataSource({
             type: 'postgres',
             url: databaseUrl,
-            entities: [
-                "src/entity/**/*.ts"
-            ],
+            entities: [User_1.User, Project_1.Project, File_1.File],
             synchronize: true,
             ssl: useSSL ? {
                 rejectUnauthorized: false,

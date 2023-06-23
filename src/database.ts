@@ -1,5 +1,7 @@
 import { DataSource } from 'typeorm';
 import { User } from './entity/User';
+import { Project } from './entity/Project';
+import { File } from './entity/File';
 
 let dataSource: DataSource | null = null;
 
@@ -16,9 +18,7 @@ export const getDataSource = async () => {
     dataSource = new DataSource({
       type: 'postgres',
       url: databaseUrl,
-      entities: [
-        "src/entity/**/*.ts"
-      ],
+      entities: [ User, Project, File ],
       synchronize: true,
       ssl: useSSL ? {
         rejectUnauthorized: false,
