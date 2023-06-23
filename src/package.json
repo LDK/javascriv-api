@@ -1,5 +1,6 @@
 {
   "dependencies": {
-    "@bit/dcompose.javascriv-types.project-types": "file:./components/project-types"
+    "@bit/dcompose.javascriv-types.javascriv-types": "file:./components/javascriv-types",
+    "@bit/dcompose.javascriv-types.editor-fonts": "file:./components/editor-fonts"
   }
 }

@@ -2,12 +2,11 @@ import { Project } from '../entity/Project';
 import { File } from '../entity/File';
 import { getDataSource } from '../database';
 import { User } from '../entity/User';
-import { ProjectFile } from '@bit/dcompose.javascriv-types.project-types';
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { expressjwt, Params, Request as JWTRequest } from "express-jwt";
 import { FindOptionsWhere, In } from 'typeorm';
-import { ProjectSettings } from '../shm/project-types/ProjectTypes';
+import { ProjectFile, ProjectSettings } from '../components/javascriv-types/Project/ProjectTypes';
 
 const jwtProps:Params = { secret: process.env.SECRET_KEY as string, algorithms: ["HS256"] };
 

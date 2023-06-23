@@ -1,11 +1,11 @@
 {
-  "name": "@bit/dcompose.javascriv-types.project-types",
+  "name": "@bit/dcompose.javascriv-types.editor-fonts",
   "version": "0.0.1",
-  "homepage": "https://bit.dev/dcompose/javascriv-types/project-types",
-  "main": "ProjectTypes.ts",
+  "homepage": "https://bit.dev/dcompose/javascriv-types/editor-fonts",
+  "main": "EditorFonts.ts",
   "componentId": {
     "scope": "dcompose.javascriv-types",
-    "name": "project-types",
+    "name": "editor-fonts",
     "version": "0.0.1"
   },
   "dependencies": {},

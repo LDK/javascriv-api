@@ -1,5 +1,5 @@
-import { ProjectSettings } from '@bit/dcompose.javascriv-types.project-types';
 import { Entity, PrimaryGeneratedColumn, Column, OneToMany, ManyToMany, JoinTable } from 'typeorm';
+import { ProjectSettings } from '../components/javascriv-types/Project/ProjectTypes';
 import { File } from './File';
 import { User } from './User';
 

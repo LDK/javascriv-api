@@ -1,3 +1,5 @@
+import { EditorFont } from "../Editor/EditorFonts";
+
 export type ProjectFile = {
   type: 'folder' | 'file';
   name: string;

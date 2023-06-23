@@ -23,9 +23,7 @@
     "pg": "^8.11.0",
     "pg-promise": "^11.5.0",
     "reflect-metadata": "^0.1.13",
-    "typeorm": "^0.3.16",
-    "@bit/dcompose.javascriv-types.javascriv-types": "file:./components/javascriv-types",
-    "@bit/dcompose.javascriv-types.editor-fonts": "file:./components/editor-fonts"
+    "typeorm": "^0.3.16"
   },
   "devDependencies": {
     "@types/bcrypt": "^5.0.0",

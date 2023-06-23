@@ -2,9 +2,17 @@
   {
     "id": {
       "scope": "dcompose.javascriv-types",
-      "name": "project-types"
+      "name": "javascriv-types"
     },
     "isSymlink": false,
-    "hash": "341e0f713891a68cb7427f26a766a7be1edb299c"
+    "hash": "01e1a63f60f80e6e539a0d5f7d9ae09efa5e0513"
+  },
+  {
+    "id": {
+      "scope": "dcompose.javascriv-types",
+      "name": "editor-fonts"
+    },
+    "isSymlink": false,
+    "hash": "c9b12d1b6ea728c00a0bfcbc811d1616403ec882"
   }
 ]
