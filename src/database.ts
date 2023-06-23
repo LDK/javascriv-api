@@ -9,9 +9,10 @@ export const getDataSource = async () => {
 
   if (!dataSource) {
     let databaseUrl = process.env.DATABASE_URL;
-    if (!databaseUrl) {
-      databaseUrl = `postgres://${process.env.DB_USERNAME}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_DATABASE}`;
-    }
+
+    // if (!databaseUrl) {
+    //   databaseUrl = `postgres://${process.env.DB_USERNAME}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_DATABASE}`;
+    // }
 
     dataSource = new DataSource({
       type: 'postgres',
