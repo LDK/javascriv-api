@@ -4,6 +4,9 @@ import { User } from './entity/User';
 let dataSource: DataSource | null = null;
 
 export const getDataSource = async () => {
+
+  console.log('process env', process.env);
+
   if (!dataSource) {
     let databaseUrl = process.env.DATABASE_URL;
     if (!databaseUrl) {
