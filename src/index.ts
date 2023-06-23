@@ -36,11 +36,12 @@ dataSource.then(() => {
   }));
 
   app.use(express.json()); // for parsing application/json
-  app.use('/', userRoutes);  // <-- updated this line
-  app.use('/', projectRoutes);  // <-- updated this line
+  app.use('/', userRoutes);
+  app.use('/', projectRoutes);
 
-  // Use the command line argument for the port number if it exists, otherwise default to 3000
-  const port = process.argv[2] || 3000;
+  // Heroku will add the port to the environment variables
+  // If it doesn't exist, default to 4000 for local development
+  const port = process.env.PORT || 4000;
 
   app.listen(port, () => {
     console.log(`Server running on http://localhost:${port}`);
