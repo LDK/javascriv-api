@@ -1,18 +1,1 @@
-[
-  {
-    "id": {
-      "scope": "dcompose.javascriv-types",
-      "name": "javascriv-types"
-    },
-    "isSymlink": false,
-    "hash": "01e1a63f60f80e6e539a0d5f7d9ae09efa5e0513"
-  },
-  {
-    "id": {
-      "scope": "dcompose.javascriv-types",
-      "name": "editor-fonts"
-    },
-    "isSymlink": false,
-    "hash": "c9b12d1b6ea728c00a0bfcbc811d1616403ec882"
-  }
-]
+[]
