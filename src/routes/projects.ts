@@ -13,6 +13,8 @@ const jwtProps:Params = { secret: process.env.SECRET_KEY as string, algorithms: 
 
 const router = Router();
 
+type ProjectTreeFile = File & { children?: ProjectTreeFile[] };
+
 interface ProjectRequest {
   title: string;
   settings: string;
@@ -151,6 +153,10 @@ router.get('/user/projects', expressjwt(jwtProps), async (req: JWTRequest, res) 
   return res.status(200).json({ createdProjects, collaboratorProjects });
 });
 
+interface FileIndex {
+  [path:string]: ProjectTreeFile;
+}
+
 router.get('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   const projectId = req.params.id;
 
@@ -171,6 +177,35 @@ router.get('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) =>
   if (req.auth?.username !== project.creator && !project.collaborators?.map(user => user.id).includes(req.auth?.id)) {
     return res.status(403).send('Unauthorized');
   }
+
+  // The hierarchical files object we will build
+  let hierarchicalFiles = [];
+
+  // Maps each path to the corresponding file object
+  const pathToFile:FileIndex = {};
+
+  // Populate the initial mapping from paths to file objects
+  for (const file of project.files) {
+    pathToFile[file.path] = file as ProjectTreeFile;
+  }
+
+  // Now we go through each file, and assign it as a child to its parent in the mapping
+  for (const file of (project.files as ProjectTreeFile[])) {
+    if (file.parent) {
+      // The parent file is in the mapping
+      const parent = pathToFile[file.parent];
+
+      // Add the file to the parent's children
+      if (!parent.children) parent.children = [];
+      parent.children.push(file);
+    } else {
+      // If the file has no parent, it's a top-level file
+      hierarchicalFiles.push(file);
+    }
+  }
+
+  // Replace the flat file array with our newly built hierarchical structure
+  project.files = hierarchicalFiles;
 
   return res.status(200).json(project);
 });
