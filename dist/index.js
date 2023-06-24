@@ -35,7 +35,7 @@ dataSource.then(() => {
         credentials: true,
         allowedHeaders: ['Authorization', 'Content-Type']
     }));
-    app.use(express_1.default.json()); // for parsing application/json
+    app.use(express_1.default.json({ limit: '50mb' })); // for parsing application/json
     app.use('/', users_1.default);
     app.use('/', projects_1.default);
     // Heroku will add the port to the environment variables
