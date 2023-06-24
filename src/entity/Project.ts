@@ -22,7 +22,7 @@ export class Project {
   files: File[];
 
   @Column()
-  creator: string;
+  creator: number;
 
   @ManyToMany(() => User)
   @JoinTable()

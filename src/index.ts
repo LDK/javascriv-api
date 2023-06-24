@@ -35,7 +35,7 @@ dataSource.then(() => {
     allowedHeaders: ['Authorization', 'Content-Type']
   }));
 
-  app.use(express.json()); // for parsing application/json
+  app.use(express.json({ limit: '50mb' })); // for parsing application/json
   app.use('/', userRoutes);
   app.use('/', projectRoutes);
 

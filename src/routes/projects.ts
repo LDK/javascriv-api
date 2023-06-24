@@ -5,26 +5,27 @@ import { User } from '../entity/User';
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
 import { expressjwt, Params, Request as JWTRequest } from "express-jwt";
-import { FindOptionsWhere, In } from 'typeorm';
+import { FindOptionsWhere, In, Repository } from 'typeorm';
 import { ProjectFile, ProjectSettings } from '../components/javascriv-types/Project/ProjectTypes';
+import { buildHierarchicalFiles, saveFile } from './helpers';
 
 const jwtProps:Params = { secret: process.env.SECRET_KEY as string, algorithms: ["HS256"] };
 
 const router = Router();
 
-type ProjectTreeFile = File & { children?: ProjectTreeFile[] };
+export type ProjectTreeFile = File & { children?: ProjectTreeFile[] };
 
 interface ProjectRequest {
   title: string;
-  settings: string;
+  settings: { [key:string]: string | number | null };
   openFilePath: string;
   files: ProjectFile[];
-  creator: string;
+  creator: number;
   collaborators: number[];
   id?: string;
 }
 
-router.post('/user/project', async (req, res) => {
+router.post('/project', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   const { title, settings, openFilePath, files, creator, collaborators, id } = req.body as ProjectRequest;
 
   const token = req.headers.authorization?.replace('Bearer ', '');
@@ -47,36 +48,19 @@ router.post('/user/project', async (req, res) => {
   const projectRepository = dataSource.getRepository(Project);
   const fileRepository = dataSource.getRepository(File);
 
-  // Helper function to save a file and its children recursively
-  async function saveFile(file:ProjectFile, parentPath:string | null, project:Project) {
-    const newFile = new File();
-    newFile.type = file.type;
-    newFile.name = file.name;
-    newFile.path = file.path;
-    newFile.parent = parentPath;
-    newFile.subType = file.subType;
-    newFile.attachment = file.attachment;
-    newFile.content = file.content;
-    newFile.initialContent = file.initialContent;
-    newFile.project = project;
-
-    await fileRepository.save(newFile);
-
-    // Recursively save children if they exist
-    if (file.children) {
-      for (const childFile of file.children) {
-        await saveFile(childFile, file.path, project);
-      }
-    }
-  }
-
-  const existingUser = await userRepository.findOne({ where: { username: creator } });
+  const userProps = { where: { id: creator } };
+  const existingUser = await userRepository.findOne(userProps);
 
   if (!existingUser) {
     return res.status(404).send('User not found');
   }
 
-  const collaboratorUsers = await userRepository.findBy({ id: In(collaborators) });
+  let collaboratorUsers:User[] = [];
+
+  // Get the collaborators
+  if (collaborators && collaborators.length > 0) {
+    collaboratorUsers = await userRepository.findBy({ id: In(collaborators) });
+  }
 
   // If id is present, update the project instead of creating a new one
 
@@ -91,7 +75,7 @@ router.post('/user/project', async (req, res) => {
 
     // Update the project details
     projectToUpdate.title = title;
-    projectToUpdate.settings = (JSON.parse(settings) || {}) as ProjectSettings;
+    projectToUpdate.settings = (settings || {}) as ProjectSettings;
     projectToUpdate.openFilePath = openFilePath;
     projectToUpdate.creator = creator;
 
@@ -107,7 +91,7 @@ router.post('/user/project', async (req, res) => {
     await fileRepository.delete(deleteCriteria);
 
     for (const file of files) {
-      await saveFile(file, null, projectToUpdate);
+      await saveFile(file, null, projectToUpdate, fileRepository);
     }
 
     return res.status(200).send(projectToUpdate);
@@ -116,7 +100,7 @@ router.post('/user/project', async (req, res) => {
     const project = new Project();
 
     project.title = title;
-    project.settings = JSON.parse(settings) || {};
+    project.settings = (settings || {}) as ProjectSettings;
     project.openFilePath = openFilePath;
     project.creator = creator;
     project.collaborators = collaboratorUsers;
@@ -124,23 +108,82 @@ router.post('/user/project', async (req, res) => {
     await projectRepository.save(project);
 
     for (const file of files) {
-      await saveFile(file, null, project);
+      await saveFile(file, null, project, fileRepository);
     }
 
     return res.status(201).send(project);
   }
 });
 
-router.get('/user/projects', expressjwt(jwtProps), async (req: JWTRequest, res) => {
+// Route to update a single project
+router.post('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) => {
+  const projectId = req.params.id;
+
+  // Get the Project Repository from the DataSource
+  const dataSource = await getDataSource();
+  const projectRepository = dataSource.getRepository(Project);
+
+  const project = await projectRepository.findOne({
+    where: { id: parseInt(`${projectId}`) },
+    relations: ["files", "collaborators"]
+  });
+
+  if (!project) {
+    return res.status(404).send('Project not found');
+  }
+
+  // Check if the user is either the creator or a collaborator
+  if (req.auth?.id !== project.creator && !project.collaborators?.map(user => user.id).includes(req.auth?.id)) {
+    return res.status(403).send('Unauthorized');
+  }
+
+  const { title, settings, openFilePath, files, collaborators } = req.body as ProjectRequest;
+
+  if (!title || !settings || !openFilePath || !files) {
+    return res.status(400).send('Missing required project data');
+  }
+
+  // Get the User Repository from the DataSource
+  const userRepository = dataSource.getRepository(User);
+  const fileRepository = dataSource.getRepository(File);
+
+  let collaboratorUsers:User[] = [];
+
+  // Get the collaborators
+  if (collaborators && collaborators.length > 0) {
+    collaboratorUsers = await userRepository.findBy({ id: In(collaborators) });
+  }
+
+  // Update the project details
+  project.title = title;
+  project.settings = (settings || {}) as ProjectSettings;
+  project.openFilePath = openFilePath;
+  project.collaborators = collaboratorUsers;
+
+  // Save the updated project
+  await projectRepository.save(project);
   
-  const username = req.auth?.username;
+  // Update the files
+  // Deleting old files and adding new ones
+  const deleteCriteria:FindOptionsWhere<File> = { project: { id: parseInt(`${projectId}`) } };
+  await fileRepository.delete(deleteCriteria);
+
+  for (const file of files) {
+    await saveFile(file, null, project, fileRepository);
+  }
+
+  return res.status(200).send(project);
+});
+
+router.get('/user/projects', expressjwt(jwtProps), async (req: JWTRequest, res) => {
+  const userId = req.auth?.id;
 
   // Get the Project Repository from the DataSource
   const dataSource = await getDataSource();
   const projectRepository = dataSource.getRepository(Project);
 
   const createdProjects = await projectRepository.find({ 
-    where: { creator: username },
+    where: { creator: userId },
     select: ["id", "title"]
   });
 
@@ -151,10 +194,6 @@ router.get('/user/projects', expressjwt(jwtProps), async (req: JWTRequest, res) 
 
   return res.status(200).json({ createdProjects, collaboratorProjects });
 });
-
-interface FileIndex {
-  [path:string]: ProjectTreeFile;
-}
 
 router.get('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   const projectId = req.params.id;
@@ -173,38 +212,12 @@ router.get('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) =>
   }
 
   // Check if the user is either the creator or a collaborator
-  if (req.auth?.username !== project.creator && !project.collaborators?.map(user => user.id).includes(req.auth?.id)) {
+  if (req.auth?.id !== project.creator && !project.collaborators?.map(user => user.id).includes(req.auth?.id)) {
     return res.status(403).send('Unauthorized');
   }
 
-  // The hierarchical files object we will build
-  let hierarchicalFiles = [];
-
-  // Maps each path to the corresponding file object
-  const pathToFile:FileIndex = {};
-
-  // Populate the initial mapping from paths to file objects
-  for (const file of project.files) {
-    pathToFile[file.path] = file as ProjectTreeFile;
-  }
-
-  // Now we go through each file, and assign it as a child to its parent in the mapping
-  for (const file of (project.files as ProjectTreeFile[])) {
-    if (file.parent) {
-      // The parent file is in the mapping
-      const parent = pathToFile[file.parent];
-
-      // Add the file to the parent's children
-      if (!parent.children) parent.children = [];
-      parent.children.push(file);
-    } else {
-      // If the file has no parent, it's a top-level file
-      hierarchicalFiles.push(file);
-    }
-  }
-
   // Replace the flat file array with our newly built hierarchical structure
-  project.files = hierarchicalFiles;
+  project.files = buildHierarchicalFiles(project.files);
 
   return res.status(200).json(project);
 });
