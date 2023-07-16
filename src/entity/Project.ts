@@ -1,4 +1,5 @@
-import { Entity, PrimaryGeneratedColumn, Column, OneToMany, ManyToMany, JoinTable } from 'typeorm';
+// entity/Project.ts
+import { Entity, PrimaryGeneratedColumn, Column, OneToMany, ManyToMany, JoinTable, ManyToOne } from 'typeorm';
 import { ProjectSettings } from '../components/javascriv-types/Project/ProjectTypes';
 import { File } from './File';
 import { User } from './User';
@@ -21,8 +22,8 @@ export class Project {
   @OneToMany(() => File, file => file.project)
   files: File[];
 
-  @Column()
-  creator: number;
+  @ManyToOne(() => User)
+  creator: User;
 
   @ManyToMany(() => User)
   @JoinTable()
