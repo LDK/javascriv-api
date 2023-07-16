@@ -4,10 +4,13 @@ import {
   PrimaryGeneratedColumn,
   Column,
   ManyToOne,
+  Unique,
 } from 'typeorm';
 import { Project } from './Project';
+import { User } from './User';
 
 @Entity()
+@Unique(["path", "projectId"])
 export class File {
   @PrimaryGeneratedColumn()
   id: number;
@@ -22,20 +25,29 @@ export class File {
   path: string;
 
   @Column({ type: 'varchar', nullable: true })
-  parent: string | null;
-
-  @Column({ type: 'varchar', nullable: true }) // changed from 'Object'
   subType?: 'document' | 'image' | 'other' | null;
-
-  @Column({ type: 'text', nullable: true })
-  attachment?: string;
 
   @Column({ type: 'text', nullable: true })
   content?: string;
 
-  @Column({ type: 'text', nullable: true })
-  initialContent?: string;
+  @ManyToOne(() => File, file => file.parent)
+  parent?: File;
 
   @ManyToOne(() => Project, project => project.files)
   project: Project;
+
+  @Column()
+  projectId: number;
+
+  @ManyToOne(() => User)
+  creator: User;
+
+  @Column({ type: 'timestamp' })
+  lastEdited: Date;
+
+  @ManyToOne(() => User)
+  editing?: User;
+
+  @ManyToOne(() => User)
+  lastEditor: User;
 }
