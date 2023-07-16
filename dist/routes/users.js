@@ -28,11 +28,15 @@ const User_1 = require("../entity/User");
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const database_1 = require("../database");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+const mailgun_js_1 = __importDefault(require("mailgun-js"));
 const router = (0, express_1.Router)();
 router.post('/user/register', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { username, password, email } = req.body;
     if (!username || !password || !email) {
         return res.status(400).send('Missing username, e-mail or password');
+    }
+    if (username.includes('@')) {
+        return res.status(400).send('Username cannot contain @ symbol.');
     }
     // Get the User Repository from the DataSource
     const dataSource = yield (0, database_1.getDataSource)();
@@ -51,6 +55,42 @@ router.post('/user/register', (req, res) => __awaiter(void 0, void 0, void 0, fu
     const { passwordHash: hash } = user, newUser = __rest(user, ["passwordHash"]);
     // Signing a JWT using the secret key from the environment variables
     const token = jsonwebtoken_1.default.sign({ id: newUser.id, username: newUser.username }, process.env.SECRET_KEY, { expiresIn: '720h' });
+    const mailService = process.env.MAIL_SERVICE;
+    switch (mailService) {
+        case 'mailgun':
+            // Initialize mailgun
+            const mailgun = (0, mailgun_js_1.default)({ apiKey: process.env.MAILGUN_API_KEY, domain: process.env.MAILGUN_DOMAIN });
+            const data = {
+                from: 'javaScriv <lemondropkid@gmail.com>',
+                to: email,
+                subject: 'Welcome to Our App',
+                text: 'Thank you for registering at our app. We are glad to have you!'
+            };
+            mailgun.messages().send(data, (error, body) => {
+                if (error) {
+                    console.error('Failed to send email', error);
+                }
+                else {
+                    console.log('Email sent', body);
+                }
+            });
+            break;
+        case 'postmark':
+            // Initialize postmark
+            // Require:
+            var postmark = require("postmark");
+            // Send an email:
+            var client = new postmark.ServerClient(process.env.POSTMARK_API_KEY);
+            client.sendEmail({
+                "From": "javaScriv@electric-bungalow.com",
+                "To": email,
+                "Subject": "Welcome to javaScriv!  Verify your account.",
+                "HtmlBody": "<strong>Hello</strong> dear Postmark user.",
+                "TextBody": "Hello from Postmark!",
+                "MessageStream": "outbound"
+            });
+            break;
+    }
     return res.status(201).send(Object.assign(Object.assign({}, newUser), { token }));
 }));
 router.post('/user/login', (req, res) => __awaiter(void 0, void 0, void 0, function* () {

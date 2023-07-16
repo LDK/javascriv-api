@@ -10,6 +10,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.Project = void 0;
+// entity/Project.ts
 const typeorm_1 = require("typeorm");
 const File_1 = require("./File");
 const User_1 = require("./User");
@@ -36,8 +37,8 @@ __decorate([
     __metadata("design:type", Array)
 ], Project.prototype, "files", void 0);
 __decorate([
-    (0, typeorm_1.Column)(),
-    __metadata("design:type", Number)
+    (0, typeorm_1.ManyToOne)(() => User_1.User),
+    __metadata("design:type", User_1.User)
 ], Project.prototype, "creator", void 0);
 __decorate([
     (0, typeorm_1.ManyToMany)(() => User_1.User),
