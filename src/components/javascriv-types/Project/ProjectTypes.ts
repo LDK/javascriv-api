@@ -1,6 +1,8 @@
+import { User } from "../../../entity/User";
 import { EditorFont } from "../Editor/EditorFonts";
 
 export type ProjectFile = {
+  id?: number;
   type: 'folder' | 'file';
   name: string;
   path: string;
@@ -10,6 +12,11 @@ export type ProjectFile = {
   content?: string;
   initialContent?: string;
   changed?: boolean;
+  creator: User;
+  lastEdited: Date;
+  lastEditor: User;
+  editing?: User;
+  parent?: ProjectFile;
 };
 
 export type ProjectSettings = {
