@@ -24,23 +24,22 @@ export async function saveFile(file:ProjectTreeFile, parent: File | undefined, p
   newFile.subType = file.subType;
   newFile.content = file.content;
   newFile.project = project;
-  newFile.projectId = project.id;
   newFile.lastEdited = new Date();
   newFile.lastEditor = user;
-  if (!file.creator) {
-    newFile.creator = user;
-  }
+  newFile.creator = file.creator || user;
   newFile.editing = undefined;
+  newFile.id = file.id;
 
-  console.log('saveFile saving file:', newFile);
+  console.log('saveFile saving file:', newFile.name, newFile.id, newFile.path, newFile.project.id);
 
   await fileRepository.save(newFile);
 
-  console.log('saveFile saved file:', newFile);
+  console.log('saveFile saved file:', newFile.name, newFile.id, newFile.path, newFile.project.id);
 
   // Recursively save children if they exist
   if (file.children) {
     for (const childFile of file.children) {
+      console.log('saving child', childFile.path);
       await saveFile(childFile, newFile, project, fileRepository, user);
     }
   }
@@ -58,8 +57,7 @@ export async function saveFile(file:ProjectTreeFile, parent: File | undefined, p
     lastEdited: newFile.lastEdited,
     lastEditor: newFile.lastEditor,
     editing: newFile.editing,
-    project: newFile.project,
-    projectId: newFile.projectId
+    project: newFile.project
   }
 
   return returnFile;

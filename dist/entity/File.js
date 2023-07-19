@@ -50,10 +50,6 @@ __decorate([
     __metadata("design:type", Project_1.Project)
 ], File.prototype, "project", void 0);
 __decorate([
-    (0, typeorm_1.Column)(),
-    __metadata("design:type", Number)
-], File.prototype, "projectId", void 0);
-__decorate([
     (0, typeorm_1.ManyToOne)(() => User_1.User),
     __metadata("design:type", User_1.User)
 ], File.prototype, "creator", void 0);
@@ -71,5 +67,5 @@ __decorate([
 ], File.prototype, "lastEditor", void 0);
 exports.File = File = File_1 = __decorate([
     (0, typeorm_1.Entity)(),
-    (0, typeorm_1.Unique)(["path", "projectId"])
+    (0, typeorm_1.Unique)(["path", "project"])
 ], File);

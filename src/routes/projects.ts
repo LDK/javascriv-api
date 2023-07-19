@@ -22,13 +22,15 @@ interface CreateProjectRequest {
   settings: { [key:string]: string | number | null };
   openFilePath: string;
   files: ProjectFile[];
-  creator: User;
+  creator: number;
 }
 
 interface UpdateProjectRequest extends CreateProjectRequest { }
 
 router.post('/project', expressjwt(jwtProps), async (req: JWTRequest, res) => {
-  const { title, settings, openFilePath, files, creator } = req.body as CreateProjectRequest;
+  const { title, settings, openFilePath, files, creator: creatorId } = req.body as CreateProjectRequest;
+
+  console.log('req body', req.body);
 
   const token = req.headers.authorization?.replace('Bearer ', '');
 
@@ -40,7 +42,7 @@ router.post('/project', expressjwt(jwtProps), async (req: JWTRequest, res) => {
     return res.status(401).send('Invalid token');
   }
 
-  if (!title || !settings || !openFilePath || !files || !creator) {
+  if (!title || !settings || !openFilePath || !files || !creatorId) {
     return res.status(400).send('Missing required project data');
   }
 
@@ -50,19 +52,24 @@ router.post('/project', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   const projectRepository = dataSource.getRepository(Project);
   const fileRepository = dataSource.getRepository(File);
 
-  const userProps = { where: { id: creator.id } };
+  const userProps = { where: { id: creatorId } };
+
+  console.log('user props', userProps);
+
   const existingUser = await userRepository.findOne(userProps);
 
   if (!existingUser) {
     return res.status(404).send('User not found');
   }
 
+  console.log('existingUser', existingUser);
+
   const project = new Project();
 
   project.title = title;
   project.settings = (settings || {}) as ProjectSettings;
   project.openFilePath = openFilePath;
-  project.creator = creator;
+  project.creator = existingUser;
   project.collaborators = [];
 
   await projectRepository.save(project);
@@ -81,11 +88,34 @@ router.post('/project', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   return res.status(201).json(savedProject);
 });
 
+type FilesByDepth = ProjectFile[][];
+
+// Recursively iterates through files and children files to build an index of files by depth
+const sortFilesByDepth = (files: ProjectFile[], depth: number = 0, indexIn: FilesByDepth = []): FilesByDepth => {
+  let fileLevels: FilesByDepth = indexIn;
+
+  // Create an array for the current depth if it does not exist
+  if (!fileLevels[depth]) {
+    fileLevels[depth] = [];
+  }
+
+  files.forEach((file: ProjectFile) => {
+    // Push the current file to the current depth array
+    fileLevels[depth].push(file);
+
+    // If the file has children, recursively call this function for the children
+    // and increase the depth by 1
+    if (file.children && file.children.length) {
+      sortFilesByDepth(file.children, depth + 1, fileLevels);
+    }
+  });
+
+  return fileLevels;
+}
+
 router.post('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   try {
     const dataSource = await getDataSource();
-
-    console.log('params', req.params);
 
     const projectId = parseInt(req.params.id);
 
@@ -96,8 +126,6 @@ router.post('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) =
   
     // Get the various specifics from the request body
     const { title, settings, openFilePath, files } = req.body as UpdateProjectRequest;
-  
-    console.log('title', title);
 
     // Instantiate a stand-in project object and populate it with the existing project's data
     // If the project is not found, then the stand-in project will be returned
@@ -106,7 +134,6 @@ router.post('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) =
     // Start a transaction
     await dataSource.manager.transaction(async transactionalEntityManager => {
       // Check if the user is either the creator or a collaborator
-      console.log('req auth', req.auth);
       const user = await transactionalEntityManager.findOne(User, { where: { id: req.auth?.id } });
     
       // Find the existing project to be updated
@@ -121,14 +148,10 @@ router.post('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) =
 
       // Set the project (the object we return at the end) to be updated
       project = activeProject;
-  
-      console.log('project.creator', project.creator);
 
       if (!user || user.id !== project.creator.id && !project.collaborators?.map(user => user.id).includes(req.auth?.id)) {
         throw new Error('Unauthorized');
       }
-
-      console.log('user', user);
 
       const { files: existingFiles } = project;
   
@@ -156,7 +179,7 @@ router.post('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) =
             rest.parent = parent;
           }
 
-          rest.projectId = project.id;
+          rest.project = project;
 
           flattened[file.id || newFileIndex] = rest;
       
@@ -168,47 +191,71 @@ router.post('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) =
         return flattened;
       }
             
+      const filesByDepth = sortFilesByDepth(files);
       const flatFiles = flattenProjectFiles(files);
-
-      console.log('flat files', flatFiles);
 
       // Check if any files have been deleted
       const deletedFiles = existingFiles.filter(file => (!file || !flatFiles[file.id]));
   
       // Delete any files that have been removed
       for (const file of deletedFiles) {
+        console.log('deleted file', file.name, file.path, file.id, Boolean(flatFiles[file.id]));
         await transactionalEntityManager.remove(File, [file]);
       }
 
-      // Iterate over flatFiles and check if they have changed
-      for (const file of Object.values(flatFiles)) {
-        const existingFile = existingFiles.find(f => (f && file && f.id === file.id));
+      // Iterate over each filesByDepth level and check if its file have changed
+      for (const depthFiles of filesByDepth) {
+        for (const file of depthFiles) {
+          const existingFile = existingFiles.find(f => (f && file && f.id === file.id));
 
-        if (existingFile) {
-          // The file already exists, so check if it has changed
-          if (
-            existingFile.content !== file.content ||
-            existingFile.name !== file.name ||
-            existingFile.path !== file.path ||
-            existingFile.parent !== file.parent
-          ) {
-            // The file has changed, so update it
-            existingFile.content = file.content;
-            existingFile.name = file.name;
-            existingFile.path = file.path;
-            existingFile.parent = file.parent;
-            existingFile.lastEdited = new Date();
-            existingFile.lastEditor = user;
+          if (existingFile) {
+            // The file already exists, so check if it has changed
+            if (
+              existingFile.content !== file.content ||
+              existingFile.name !== file.name ||
+              existingFile.path !== file.path ||
+              existingFile.parent !== file.parent
+            ) {
+              // The file has changed, so update it
+              existingFile.content = file.content;
+              existingFile.name = file.name;
+              existingFile.path = file.path;
+              existingFile.parent = file.parent;
+              existingFile.lastEdited = new Date();
+              existingFile.lastEditor = user;
+              existingFile.project = project;
+
+              if (!existingFile.parent) {
+                // Find the parent file in flatFiles by path
+                const parentFile = Object.values(flatFiles).find(f => f.path === file.path.split('/').slice(0, -1).join('/'));
+                existingFile.parent = parentFile;
+              }
+              
+              console.log('changed file', file.id, file.name, file.path, existingFile.id, existingFile.project.id, existingFile.name, existingFile.parent);
+              await transactionalEntityManager.save(File, existingFile);
+            }
+          } else {
+            // The file does not exist, so create it
+
+            // If the file has no parent, find it in flatFiles by path
+            if (!file.parent) {
+              const parentFile = Object.values(flatFiles).find(f => f.path === file.path.split('/').slice(0, -1).join('/'));
+              file.parent = parentFile;
+            }
             
-            await transactionalEntityManager.save(File, existingFile);
-          }
-        } else {
-          // The file does not exist, so create it
-          console.log('creating file', file);
+            if (!file.project) {
+              file.project = project;
+            }
 
-          await saveFile(file, file.parent, project, transactionalEntityManager.getRepository(File), user);
+            if (!file.creator) {
+              file.creator = user;
+            }
+
+            const savedFile = await saveFile(file, file.parent, file.project, transactionalEntityManager.getRepository(File), user);
+            flatFiles[savedFile.id] = savedFile;
+          }
         }
-      }
+      };
 
       if (!title || !settings || !openFilePath || !files) {
         throw new Error('Missing required project data');
@@ -225,13 +272,15 @@ router.post('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) =
       // Set the open file path
       project.openFilePath = openFilePath;
   
+      // Set the files
+      project.files = flatFiles ? Object.values(flatFiles) : [];
+
       // Save the updated project
       await transactionalEntityManager.save(Project, project);
     });
 
     // Load a copy of the saved project from the database and return it
     if (project) {
-      console.log('project id', project.id);
       const savedProject = await loadProject(project.id);
       return res.status(200).json(savedProject);
     }

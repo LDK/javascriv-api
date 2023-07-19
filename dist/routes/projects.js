@@ -36,7 +36,8 @@ const jwtProps = { secret: process.env.SECRET_KEY, algorithms: ["HS256"] };
 const router = (0, express_1.Router)();
 router.post('/project', (0, express_jwt_1.expressjwt)(jwtProps), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     var _a;
-    const { title, settings, openFilePath, files, creator } = req.body;
+    const { title, settings, openFilePath, files, creator: creatorId } = req.body;
+    console.log('req body', req.body);
     const token = (_a = req.headers.authorization) === null || _a === void 0 ? void 0 : _a.replace('Bearer ', '');
     let decoded;
     try {
@@ -45,7 +46,7 @@ router.post('/project', (0, express_jwt_1.expressjwt)(jwtProps), (req, res) => _
     catch (err) {
         return res.status(401).send('Invalid token');
     }
-    if (!title || !settings || !openFilePath || !files || !creator) {
+    if (!title || !settings || !openFilePath || !files || !creatorId) {
         return res.status(400).send('Missing required project data');
     }
     // Get the User, Project and File Repositories from the DataSource
@@ -53,16 +54,18 @@ router.post('/project', (0, express_jwt_1.expressjwt)(jwtProps), (req, res) => _
     const userRepository = dataSource.getRepository(User_1.User);
     const projectRepository = dataSource.getRepository(Project_1.Project);
     const fileRepository = dataSource.getRepository(File_1.File);
-    const userProps = { where: { id: creator.id } };
+    const userProps = { where: { id: creatorId } };
+    console.log('user props', userProps);
     const existingUser = yield userRepository.findOne(userProps);
     if (!existingUser) {
         return res.status(404).send('User not found');
     }
+    console.log('existingUser', existingUser);
     const project = new Project_1.Project();
     project.title = title;
     project.settings = (settings || {});
     project.openFilePath = openFilePath;
-    project.creator = creator;
+    project.creator = existingUser;
     project.collaborators = [];
     yield projectRepository.save(project);
     project.files = [];
@@ -74,10 +77,27 @@ router.post('/project', (0, express_jwt_1.expressjwt)(jwtProps), (req, res) => _
     const savedProject = yield loadProject(project.id);
     return res.status(201).json(savedProject);
 }));
+// Recursively iterates through files and children files to build an index of files by depth
+const sortFilesByDepth = (files, depth = 0, indexIn = []) => {
+    let fileLevels = indexIn;
+    // Create an array for the current depth if it does not exist
+    if (!fileLevels[depth]) {
+        fileLevels[depth] = [];
+    }
+    files.forEach((file) => {
+        // Push the current file to the current depth array
+        fileLevels[depth].push(file);
+        // If the file has children, recursively call this function for the children
+        // and increase the depth by 1
+        if (file.children && file.children.length) {
+            sortFilesByDepth(file.children, depth + 1, fileLevels);
+        }
+    });
+    return fileLevels;
+};
 router.post('/project/:id', (0, express_jwt_1.expressjwt)(jwtProps), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const dataSource = yield (0, database_1.getDataSource)();
-        console.log('params', req.params);
         const projectId = parseInt(req.params.id);
         // Ensure that the project ID is a number
         if (isNaN(projectId)) {
@@ -85,7 +105,6 @@ router.post('/project/:id', (0, express_jwt_1.expressjwt)(jwtProps), (req, res) 
         }
         // Get the various specifics from the request body
         const { title, settings, openFilePath, files } = req.body;
-        console.log('title', title);
         // Instantiate a stand-in project object and populate it with the existing project's data
         // If the project is not found, then the stand-in project will be returned
         let project = new Project_1.Project();
@@ -93,7 +112,6 @@ router.post('/project/:id', (0, express_jwt_1.expressjwt)(jwtProps), (req, res) 
         yield dataSource.manager.transaction((transactionalEntityManager) => __awaiter(void 0, void 0, void 0, function* () {
             var _b, _c, _d;
             // Check if the user is either the creator or a collaborator
-            console.log('req auth', req.auth);
             const user = yield transactionalEntityManager.findOne(User_1.User, { where: { id: (_b = req.auth) === null || _b === void 0 ? void 0 : _b.id } });
             // Find the existing project to be updated
             const activeProject = yield transactionalEntityManager.findOne(Project_1.Project, {
@@ -105,11 +123,9 @@ router.post('/project/:id', (0, express_jwt_1.expressjwt)(jwtProps), (req, res) 
             }
             // Set the project (the object we return at the end) to be updated
             project = activeProject;
-            console.log('project.creator', project.creator);
             if (!user || user.id !== project.creator.id && !((_c = project.collaborators) === null || _c === void 0 ? void 0 : _c.map(user => user.id).includes((_d = req.auth) === null || _d === void 0 ? void 0 : _d.id))) {
                 throw new Error('Unauthorized');
             }
-            console.log('user', user);
             const { files: existingFiles } = project;
             // This function will flatten only the existing files.  New ones will be handled later.
             const flattenProjectFiles = (files, startingNewFileIndex, parent) => {
@@ -125,7 +141,7 @@ router.post('/project/:id', (0, express_jwt_1.expressjwt)(jwtProps), (req, res) 
                     if (parent) {
                         rest.parent = parent;
                     }
-                    rest.projectId = project.id;
+                    rest.project = project;
                     flattened[file.id || newFileIndex] = rest;
                     if (children) {
                         flattened = Object.assign(Object.assign({}, flattened), flattenProjectFiles(children, newFileIndex, rest));
@@ -133,39 +149,61 @@ router.post('/project/:id', (0, express_jwt_1.expressjwt)(jwtProps), (req, res) 
                 }
                 return flattened;
             };
+            const filesByDepth = sortFilesByDepth(files);
             const flatFiles = flattenProjectFiles(files);
-            console.log('flat files', flatFiles);
             // Check if any files have been deleted
             const deletedFiles = existingFiles.filter(file => (!file || !flatFiles[file.id]));
             // Delete any files that have been removed
             for (const file of deletedFiles) {
+                console.log('deleted file', file.name, file.path, file.id, Boolean(flatFiles[file.id]));
                 yield transactionalEntityManager.remove(File_1.File, [file]);
             }
-            // Iterate over flatFiles and check if they have changed
-            for (const file of Object.values(flatFiles)) {
-                const existingFile = existingFiles.find(f => (f && file && f.id === file.id));
-                if (existingFile) {
-                    // The file already exists, so check if it has changed
-                    if (existingFile.content !== file.content ||
-                        existingFile.name !== file.name ||
-                        existingFile.path !== file.path ||
-                        existingFile.parent !== file.parent) {
-                        // The file has changed, so update it
-                        existingFile.content = file.content;
-                        existingFile.name = file.name;
-                        existingFile.path = file.path;
-                        existingFile.parent = file.parent;
-                        existingFile.lastEdited = new Date();
-                        existingFile.lastEditor = user;
-                        yield transactionalEntityManager.save(File_1.File, existingFile);
+            // Iterate over each filesByDepth level and check if its file have changed
+            for (const depthFiles of filesByDepth) {
+                for (const file of depthFiles) {
+                    const existingFile = existingFiles.find(f => (f && file && f.id === file.id));
+                    if (existingFile) {
+                        // The file already exists, so check if it has changed
+                        if (existingFile.content !== file.content ||
+                            existingFile.name !== file.name ||
+                            existingFile.path !== file.path ||
+                            existingFile.parent !== file.parent) {
+                            // The file has changed, so update it
+                            existingFile.content = file.content;
+                            existingFile.name = file.name;
+                            existingFile.path = file.path;
+                            existingFile.parent = file.parent;
+                            existingFile.lastEdited = new Date();
+                            existingFile.lastEditor = user;
+                            existingFile.project = project;
+                            if (!existingFile.parent) {
+                                // Find the parent file in flatFiles by path
+                                const parentFile = Object.values(flatFiles).find(f => f.path === file.path.split('/').slice(0, -1).join('/'));
+                                existingFile.parent = parentFile;
+                            }
+                            console.log('changed file', file.id, file.name, file.path, existingFile.id, existingFile.project.id, existingFile.name, existingFile.parent);
+                            yield transactionalEntityManager.save(File_1.File, existingFile);
+                        }
+                    }
+                    else {
+                        // The file does not exist, so create it
+                        // If the file has no parent, find it in flatFiles by path
+                        if (!file.parent) {
+                            const parentFile = Object.values(flatFiles).find(f => f.path === file.path.split('/').slice(0, -1).join('/'));
+                            file.parent = parentFile;
+                        }
+                        if (!file.project) {
+                            file.project = project;
+                        }
+                        if (!file.creator) {
+                            file.creator = user;
+                        }
+                        const savedFile = yield (0, helpers_1.saveFile)(file, file.parent, file.project, transactionalEntityManager.getRepository(File_1.File), user);
+                        flatFiles[savedFile.id] = savedFile;
                     }
                 }
-                else {
-                    // The file does not exist, so create it
-                    console.log('creating file', file);
-                    yield (0, helpers_1.saveFile)(file, file.parent, project, transactionalEntityManager.getRepository(File_1.File), user);
-                }
             }
+            ;
             if (!title || !settings || !openFilePath || !files) {
                 throw new Error('Missing required project data');
             }
@@ -177,12 +215,13 @@ router.post('/project/:id', (0, express_jwt_1.expressjwt)(jwtProps), (req, res) 
             }
             // Set the open file path
             project.openFilePath = openFilePath;
+            // Set the files
+            project.files = flatFiles ? Object.values(flatFiles) : [];
             // Save the updated project
             yield transactionalEntityManager.save(Project_1.Project, project);
         }));
         // Load a copy of the saved project from the database and return it
         if (project) {
-            console.log('project id', project.id);
             const savedProject = yield loadProject(project.id);
             return res.status(200).json(savedProject);
         }

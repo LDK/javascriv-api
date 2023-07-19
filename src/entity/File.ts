@@ -10,7 +10,8 @@ import { Project } from './Project';
 import { User } from './User';
 
 @Entity()
-@Unique(["path", "projectId"])
+@Unique(["path", "project"])
+
 export class File {
   @PrimaryGeneratedColumn()
   id: number;
@@ -35,9 +36,6 @@ export class File {
 
   @ManyToOne(() => Project, project => project.files)
   project: Project;
-
-  @Column()
-  projectId: number;
 
   @ManyToOne(() => User)
   creator: User;
