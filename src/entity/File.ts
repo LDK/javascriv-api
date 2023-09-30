@@ -32,7 +32,7 @@ export class File {
   content?: string;
 
   @ManyToOne(() => File, file => file.parent)
-  parent?: File;
+  parent?: File | null;
 
   @ManyToOne(() => Project, project => project.files)
   project: Project;

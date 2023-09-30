@@ -8,6 +8,7 @@ import { expressjwt, Params, Request as JWTRequest } from "express-jwt";
 import { ProjectSettings } from '../components/javascriv-types/Project/ProjectTypes';
 import { areObjectsEqual, buildHierarchicalFiles, saveFile } from './helpers';
 import { getManager, QueryFailedError, EntityManager } from 'typeorm';
+import { flattenProjectFiles, sortFilesByDepth } from './helpers/project';
 
 const jwtProps:Params = { secret: process.env.SECRET_KEY as string, algorithms: ["HS256"] };
 
@@ -83,35 +84,14 @@ router.post('/project', expressjwt(jwtProps), async (req: JWTRequest, res) => {
     newFiles.push(newFile);
   }
 
+  console.log('new files', newFiles);
+
   const savedProject = await loadProject(project.id);
 
   return res.status(201).json(savedProject);
 });
 
-type FilesByDepth = ProjectFile[][];
-
-// Recursively iterates through files and children files to build an index of files by depth
-const sortFilesByDepth = (files: ProjectFile[], depth: number = 0, indexIn: FilesByDepth = []): FilesByDepth => {
-  let fileLevels: FilesByDepth = indexIn;
-
-  // Create an array for the current depth if it does not exist
-  if (!fileLevels[depth]) {
-    fileLevels[depth] = [];
-  }
-
-  files.forEach((file: ProjectFile) => {
-    // Push the current file to the current depth array
-    fileLevels[depth].push(file);
-
-    // If the file has children, recursively call this function for the children
-    // and increase the depth by 1
-    if (file.children && file.children.length) {
-      sortFilesByDepth(file.children, depth + 1, fileLevels);
-    }
-  });
-
-  return fileLevels;
-}
+export type FilesByDepth = ProjectFile[][];
 
 router.post('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   try {
@@ -158,41 +138,8 @@ router.post('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) =
       // flatten the `files` variable into a non-nested object
       // It will start as an array of root-level files, which may have children files
 
-      type ProjectFileIndex = { [id:number]: ProjectFile };
-
-      // This function will flatten only the existing files.  New ones will be handled later.
-      const flattenProjectFiles = (files: ProjectTreeFile[], startingNewFileIndex?: number, parent?: ProjectFile): ProjectFileIndex => {
-        let flattened: ProjectFileIndex = {};
-        
-        // Since new files will not have ids, this will ensure that they have a unique id
-        // in the flattened index
-        let newFileIndex = startingNewFileIndex || 0;
-
-        for (let file of files) {
-          if (!file) continue;
-
-          newFileIndex--;
-
-          let { children, ...rest } = file;
-
-          if (parent) {
-            rest.parent = parent;
-          }
-
-          rest.project = project;
-
-          flattened[file.id || newFileIndex] = rest;
-      
-          if (children) {
-            flattened = { ...flattened, ...flattenProjectFiles(children, newFileIndex, rest) };
-          }
-        }
-      
-        return flattened;
-      }
-            
       const filesByDepth = sortFilesByDepth(files);
-      const flatFiles = flattenProjectFiles(files);
+      const flatFiles = flattenProjectFiles(project, files);
 
       // Check if any files have been deleted
       const deletedFiles = existingFiles.filter(file => (!file || !flatFiles[file.id]));
@@ -203,13 +150,23 @@ router.post('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) =
         await transactionalEntityManager.remove(File, [file]);
       }
 
+      let fileDepth = 0;
+
       // Iterate over each filesByDepth level and check if its file have changed
       for (const depthFiles of filesByDepth) {
+        // Iterate over each file in the current depth level
+        fileDepth = fileDepth + 1;
+
         for (const file of depthFiles) {
           const existingFile = existingFiles.find(f => (f && file && f.id === file.id));
 
           if (existingFile) {
             // The file already exists, so check if it has changed
+            if (fileDepth === 1 && existingFile.parent) {
+              console.log('clearing parent', existingFile.id, existingFile.name, existingFile.path);
+              existingFile.parent = null;
+            }
+  
             if (
               existingFile.content !== file.content ||
               existingFile.name !== file.name ||
@@ -231,8 +188,8 @@ router.post('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) =
                 existingFile.parent = parentFile;
               }
               
-              console.log('changed file', file.id, file.name, file.path, existingFile.id, existingFile.project.id, existingFile.name, existingFile.parent);
-              await transactionalEntityManager.save(File, existingFile);
+              console.log('changed file', file.id, file.name, file.path, file.parent, existingFile.id, existingFile.project.id, existingFile.name, existingFile.parent);
+              await transactionalEntityManager.save(File, file);
             }
           } else {
             // The file does not exist, so create it
@@ -380,14 +337,10 @@ router.get('/user/projects', expressjwt(jwtProps), async (req: JWTRequest, res) 
     select: ["id", "title"]
   });
 
-  console.log('created projects for user', userId, req.auth?.id, createdProjects);
-
   const collaboratorProjects = await projectRepository.createQueryBuilder("project")
     .innerJoinAndSelect("project.collaborators", "user", "user.id = :uid", { uid: req.auth?.id })
     .select(["project.id", "project.title"])
     .getMany();
-
-    console.log('collaborator projects for user', userId, req.auth?.id, collaboratorProjects);
 
     return res.status(200).json({ createdProjects, collaboratorProjects });
 });
