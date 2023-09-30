@@ -8,7 +8,7 @@ import { expressjwt, Params, Request as JWTRequest } from "express-jwt";
 import { ProjectSettings } from '../components/javascriv-types/Project/ProjectTypes';
 import { areObjectsEqual, buildHierarchicalFiles, saveFile } from './helpers';
 import { getManager, QueryFailedError, EntityManager } from 'typeorm';
-import { flattenProjectFiles, sortFilesByDepth } from './helpers/project';
+import { flattenProjectFiles, sortFilesByDepth } from './helpers/ProjectUtil';
 
 const jwtProps:Params = { secret: process.env.SECRET_KEY as string, algorithms: ["HS256"] };
 

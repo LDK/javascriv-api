@@ -8,24 +8,12 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
         step((generator = generator.apply(thisArg, _arguments || [])).next());
     });
 };
-var __rest = (this && this.__rest) || function (s, e) {
-    var t = {};
-    for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p) && e.indexOf(p) < 0)
-        t[p] = s[p];
-    if (s != null && typeof Object.getOwnPropertySymbols === "function")
-        for (var i = 0, p = Object.getOwnPropertySymbols(s); i < p.length; i++) {
-            if (e.indexOf(p[i]) < 0 && Object.prototype.propertyIsEnumerable.call(s, p[i]))
-                t[p[i]] = s[p[i]];
-        }
-    return t;
-};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.areObjectsEqual = exports.buildHierarchicalFiles = exports.saveFile = void 0;
 const File_1 = require("../entity/File");
 // Helper function to save a file and its children recursively
 function saveFile(file, parent, project, fileRepository, user) {
     return __awaiter(this, void 0, void 0, function* () {
-        const _a = parent ? parent : { children: undefined }, { children: parentChildren } = _a, parentFile = __rest(_a, ["children"]);
         const newFile = new File_1.File();
         newFile.type = file.type;
         newFile.name = file.name;
@@ -39,7 +27,7 @@ function saveFile(file, parent, project, fileRepository, user) {
         newFile.creator = file.creator || user;
         newFile.editing = undefined;
         newFile.id = file.id;
-        console.log('saveFile saving file:', newFile.name, newFile.id, newFile.path, newFile.project.id);
+        console.log('saveFile saving file:', newFile.name, newFile.id, newFile.path, newFile.parent, newFile.project.id);
         yield fileRepository.save(newFile);
         console.log('saveFile saved file:', newFile.name, newFile.id, newFile.path, newFile.project.id);
         // Recursively save children if they exist

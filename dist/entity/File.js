@@ -43,7 +43,7 @@ __decorate([
 ], File.prototype, "content", void 0);
 __decorate([
     (0, typeorm_1.ManyToOne)(() => File_1, file => file.parent),
-    __metadata("design:type", File)
+    __metadata("design:type", Object)
 ], File.prototype, "parent", void 0);
 __decorate([
     (0, typeorm_1.ManyToOne)(() => Project_1.Project, project => project.files),

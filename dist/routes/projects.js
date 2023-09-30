@@ -32,6 +32,7 @@ const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const express_jwt_1 = require("express-jwt");
 const helpers_1 = require("./helpers");
 const typeorm_1 = require("typeorm");
+const ProjectUtil_1 = require("./helpers/ProjectUtil");
 const jwtProps = { secret: process.env.SECRET_KEY, algorithms: ["HS256"] };
 const router = (0, express_1.Router)();
 router.post('/project', (0, express_jwt_1.expressjwt)(jwtProps), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
@@ -74,27 +75,10 @@ router.post('/project', (0, express_jwt_1.expressjwt)(jwtProps), (req, res) => _
         const newFile = yield (0, helpers_1.saveFile)(file, undefined, project, fileRepository, existingUser);
         newFiles.push(newFile);
     }
+    console.log('new files', newFiles);
     const savedProject = yield loadProject(project.id);
     return res.status(201).json(savedProject);
 }));
-// Recursively iterates through files and children files to build an index of files by depth
-const sortFilesByDepth = (files, depth = 0, indexIn = []) => {
-    let fileLevels = indexIn;
-    // Create an array for the current depth if it does not exist
-    if (!fileLevels[depth]) {
-        fileLevels[depth] = [];
-    }
-    files.forEach((file) => {
-        // Push the current file to the current depth array
-        fileLevels[depth].push(file);
-        // If the file has children, recursively call this function for the children
-        // and increase the depth by 1
-        if (file.children && file.children.length) {
-            sortFilesByDepth(file.children, depth + 1, fileLevels);
-        }
-    });
-    return fileLevels;
-};
 router.post('/project/:id', (0, express_jwt_1.expressjwt)(jwtProps), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const dataSource = yield (0, database_1.getDataSource)();
@@ -127,30 +111,10 @@ router.post('/project/:id', (0, express_jwt_1.expressjwt)(jwtProps), (req, res) 
                 throw new Error('Unauthorized');
             }
             const { files: existingFiles } = project;
-            // This function will flatten only the existing files.  New ones will be handled later.
-            const flattenProjectFiles = (files, startingNewFileIndex, parent) => {
-                let flattened = {};
-                // Since new files will not have ids, this will ensure that they have a unique id
-                // in the flattened index
-                let newFileIndex = startingNewFileIndex || 0;
-                for (let file of files) {
-                    if (!file)
-                        continue;
-                    newFileIndex--;
-                    let { children } = file, rest = __rest(file, ["children"]);
-                    if (parent) {
-                        rest.parent = parent;
-                    }
-                    rest.project = project;
-                    flattened[file.id || newFileIndex] = rest;
-                    if (children) {
-                        flattened = Object.assign(Object.assign({}, flattened), flattenProjectFiles(children, newFileIndex, rest));
-                    }
-                }
-                return flattened;
-            };
-            const filesByDepth = sortFilesByDepth(files);
-            const flatFiles = flattenProjectFiles(files);
+            // flatten the `files` variable into a non-nested object
+            // It will start as an array of root-level files, which may have children files
+            const filesByDepth = (0, ProjectUtil_1.sortFilesByDepth)(files);
+            const flatFiles = (0, ProjectUtil_1.flattenProjectFiles)(project, files);
             // Check if any files have been deleted
             const deletedFiles = existingFiles.filter(file => (!file || !flatFiles[file.id]));
             // Delete any files that have been removed
@@ -158,12 +122,19 @@ router.post('/project/:id', (0, express_jwt_1.expressjwt)(jwtProps), (req, res) 
                 console.log('deleted file', file.name, file.path, file.id, Boolean(flatFiles[file.id]));
                 yield transactionalEntityManager.remove(File_1.File, [file]);
             }
+            let fileDepth = 0;
             // Iterate over each filesByDepth level and check if its file have changed
             for (const depthFiles of filesByDepth) {
+                // Iterate over each file in the current depth level
+                fileDepth = fileDepth + 1;
                 for (const file of depthFiles) {
                     const existingFile = existingFiles.find(f => (f && file && f.id === file.id));
                     if (existingFile) {
                         // The file already exists, so check if it has changed
+                        if (fileDepth === 1 && existingFile.parent) {
+                            console.log('clearing parent', existingFile.id, existingFile.name, existingFile.path);
+                            existingFile.parent = null;
+                        }
                         if (existingFile.content !== file.content ||
                             existingFile.name !== file.name ||
                             existingFile.path !== file.path ||
@@ -181,8 +152,8 @@ router.post('/project/:id', (0, express_jwt_1.expressjwt)(jwtProps), (req, res) 
                                 const parentFile = Object.values(flatFiles).find(f => f.path === file.path.split('/').slice(0, -1).join('/'));
                                 existingFile.parent = parentFile;
                             }
-                            console.log('changed file', file.id, file.name, file.path, existingFile.id, existingFile.project.id, existingFile.name, existingFile.parent);
-                            yield transactionalEntityManager.save(File_1.File, existingFile);
+                            console.log('changed file', file.id, file.name, file.path, file.parent, existingFile.id, existingFile.project.id, existingFile.name, existingFile.parent);
+                            yield transactionalEntityManager.save(File_1.File, file);
                         }
                     }
                     else {
@@ -288,7 +259,7 @@ router.post('/project/:id/addCollaborator', (0, express_jwt_1.expressjwt)(jwtPro
     return res.status(200).send(project);
 }));
 router.get('/user/projects', (0, express_jwt_1.expressjwt)(jwtProps), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _f, _g, _h, _j;
+    var _f, _g;
     const userId = (_f = req.auth) === null || _f === void 0 ? void 0 : _f.id;
     // Get the Project Repository from the DataSource
     const dataSource = yield (0, database_1.getDataSource)();
@@ -302,12 +273,10 @@ router.get('/user/projects', (0, express_jwt_1.expressjwt)(jwtProps), (req, res)
         where: { creator: user },
         select: ["id", "title"]
     });
-    console.log('created projects for user', userId, (_g = req.auth) === null || _g === void 0 ? void 0 : _g.id, createdProjects);
     const collaboratorProjects = yield projectRepository.createQueryBuilder("project")
-        .innerJoinAndSelect("project.collaborators", "user", "user.id = :uid", { uid: (_h = req.auth) === null || _h === void 0 ? void 0 : _h.id })
+        .innerJoinAndSelect("project.collaborators", "user", "user.id = :uid", { uid: (_g = req.auth) === null || _g === void 0 ? void 0 : _g.id })
         .select(["project.id", "project.title"])
         .getMany();
-    console.log('collaborator projects for user', userId, (_j = req.auth) === null || _j === void 0 ? void 0 : _j.id, collaboratorProjects);
     return res.status(200).json({ createdProjects, collaboratorProjects });
 }));
 const loadProject = (projectId) => __awaiter(void 0, void 0, void 0, function* () {
@@ -326,7 +295,7 @@ const loadProject = (projectId) => __awaiter(void 0, void 0, void 0, function* (
     return Object.assign(Object.assign({}, project), { files: projectFiles });
 });
 router.get('/project/:id', (0, express_jwt_1.expressjwt)(jwtProps), (req, res) => __awaiter(void 0, void 0, void 0, function* () {
-    var _k, _l, _m;
+    var _h, _j, _k;
     const projectId = parseInt(req.params.id);
     // Ensure that the project ID is a number
     if (isNaN(projectId)) {
@@ -339,7 +308,7 @@ router.get('/project/:id', (0, express_jwt_1.expressjwt)(jwtProps), (req, res) =
         return res.status(404).send('Project not found');
     }
     // Check if the user is either the creator or a collaborator
-    if (((_k = req.auth) === null || _k === void 0 ? void 0 : _k.id) !== project.creator.id && !((_l = project.collaborators) === null || _l === void 0 ? void 0 : _l.map(user => user.id).includes((_m = req.auth) === null || _m === void 0 ? void 0 : _m.id))) {
+    if (((_h = req.auth) === null || _h === void 0 ? void 0 : _h.id) !== project.creator.id && !((_j = project.collaborators) === null || _j === void 0 ? void 0 : _j.map(user => user.id).includes((_k = req.auth) === null || _k === void 0 ? void 0 : _k.id))) {
         return res.status(403).send('Unauthorized');
     }
     // Return the project
