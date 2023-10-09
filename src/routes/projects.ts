@@ -7,7 +7,7 @@ import jwt from 'jsonwebtoken';
 import { expressjwt, Params, Request as JWTRequest } from "express-jwt";
 import { ProjectSettings } from '../components/javascriv-types/Project/ProjectTypes';
 import { areObjectsEqual, buildHierarchicalFiles, saveFile } from './helpers';
-import { getManager, QueryFailedError, EntityManager } from 'typeorm';
+import { QueryFailedError } from 'typeorm';
 import { flattenProjectFiles, sortFilesByDepth } from './helpers/ProjectUtil';
 
 const jwtProps:Params = { secret: process.env.SECRET_KEY as string, algorithms: ["HS256"] };
@@ -31,8 +31,6 @@ interface UpdateProjectRequest extends CreateProjectRequest { }
 router.post('/project', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   const { title, settings, openFilePath, files, creator: creatorId } = req.body as CreateProjectRequest;
 
-  console.log('req body', req.body);
-
   const token = req.headers.authorization?.replace('Bearer ', '');
 
   let decoded;
@@ -55,15 +53,11 @@ router.post('/project', expressjwt(jwtProps), async (req: JWTRequest, res) => {
 
   const userProps = { where: { id: creatorId } };
 
-  console.log('user props', userProps);
-
   const existingUser = await userRepository.findOne(userProps);
 
   if (!existingUser) {
     return res.status(404).send('User not found');
   }
-
-  console.log('existingUser', existingUser);
 
   const project = new Project();
 
@@ -83,8 +77,6 @@ router.post('/project', expressjwt(jwtProps), async (req: JWTRequest, res) => {
     const newFile = await saveFile(file, undefined, project, fileRepository, existingUser);
     newFiles.push(newFile);
   }
-
-  console.log('new files', newFiles);
 
   const savedProject = await loadProject(project.id);
 
@@ -146,7 +138,6 @@ router.post('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) =
   
       // Delete any files that have been removed
       for (const file of deletedFiles) {
-        console.log('deleted file', file.name, file.path, file.id, Boolean(flatFiles[file.id]));
         await transactionalEntityManager.remove(File, [file]);
       }
 
@@ -163,7 +154,6 @@ router.post('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) =
           if (existingFile) {
             // The file already exists, so check if it has changed
             if (fileDepth === 1 && existingFile.parent) {
-              console.log('clearing parent', existingFile.id, existingFile.name, existingFile.path);
               existingFile.parent = null;
             }
   
@@ -188,7 +178,6 @@ router.post('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) =
                 existingFile.parent = parentFile;
               }
               
-              console.log('changed file', file.id, file.name, file.path, file.parent, existingFile.id, existingFile.project.id, existingFile.name, existingFile.parent);
               await transactionalEntityManager.save(File, file);
             }
           } else {
@@ -255,7 +244,6 @@ router.post('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) =
 });
 
 router.post('/project/:id/addCollaborator', expressjwt(jwtProps), async (req: JWTRequest, res) => {
-  console.log('add collaborator', req.body);
   const { search, projectId } = req.body;
 
   // Get the DataSource and repositories
@@ -286,16 +274,11 @@ router.post('/project/:id/addCollaborator', expressjwt(jwtProps), async (req: JW
     relations: ["files", "collaborators", "creator"]
   });
 
-  console.log('project?', project);
-
   if (!project) {
     return res.status(404).send('Project not found');
   }
 
-  console.log('req auth', req.auth);
   const { files: pFiles, ...projectMain } = project; 
-
-  console.log('project', projectMain);
 
   // Check if the user is the creator
   if (req.auth?.id !== project.creator.id) {

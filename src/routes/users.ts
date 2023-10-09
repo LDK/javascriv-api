@@ -102,7 +102,7 @@ router.post('/user/login', async (req, res) => {
   const dataSource = await getDataSource();
   const userRepository = dataSource.getRepository(User);
 
-  const existingUser = await userRepository.findOne({ where: { username } });
+  const existingUser = await userRepository.findOne({ where: { username }, select: ["id", "username", "passwordHash", "email"] });
 
   if (!existingUser) {
     return res.status(401).send('Invalid username or password');
