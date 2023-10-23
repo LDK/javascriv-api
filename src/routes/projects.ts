@@ -85,7 +85,7 @@ router.post('/project', expressjwt(jwtProps), async (req: JWTRequest, res) => {
 
 export type FilesByDepth = ProjectFile[][];
 
-router.post('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) => {
+router.patch('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   try {
     const dataSource = await getDataSource();
 
@@ -120,10 +120,12 @@ router.post('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) =
 
       // Set the project (the object we return at the end) to be updated
       project = activeProject;
-
       if (!user || user.id !== project.creator.id && !project.collaborators?.map(user => user.id).includes(req.auth?.id)) {
         throw new Error('Unauthorized');
       }
+
+      project.lastEdited = new Date();
+      project.lastEditor = user;
 
       const { files: existingFiles } = project;
   
@@ -243,89 +245,110 @@ router.post('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) =
   }
 });
 
-router.post('/project/:id/addCollaborator', expressjwt(jwtProps), async (req: JWTRequest, res) => {
+router.patch('/project/:id/collaborator', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   const { search, projectId } = req.body;
-
-  // Get the DataSource and repositories
-  const dataSource = await getDataSource();
-  const userRepository = dataSource.getRepository(User);
-  const projectRepository = dataSource.getRepository(Project);
 
   // Ensure search text was provided
   if (!search) {
     return res.status(400).send('Search text is required');
   }
 
+  const dataSource = await getDataSource();
+  const userRepository = dataSource.getRepository(User);
+  const projectRepository = dataSource.getRepository(Project);
+
   // Determine if search text is a username or email
   const isEmail = search.includes('@');
 
   // Find the user to be added as a collaborator
-  const user = isEmail 
+  const userToBeAdded = isEmail 
     ? await userRepository.findOne({ where: { email: search } })
     : await userRepository.findOne({ where: { username: search } });
 
-  if (!user) {
+  if (!userToBeAdded) {
     return res.status(404).send(`User not found (${search})`);
   }
 
-  // Find the project
+  // Find the project with necessary relations
   const project = await projectRepository.findOne({
-    where: { id: parseInt(`${projectId}`) },
-    relations: ["files", "collaborators", "creator"]
+    where: { id: parseInt(projectId, 10) },
+    relations: ["collaborators", "creator"]
   });
 
   if (!project) {
     return res.status(404).send('Project not found');
   }
 
-  const { files: pFiles, ...projectMain } = project; 
-
-  // Check if the user is the creator
+  // Authorization: Ensure the requesting user is the creator
   if (req.auth?.id !== project.creator.id) {
     return res.status(403).send('Unauthorized');
   }
 
-  const collaborators = project.collaborators || [];
-
-  // Add the user as a collaborator
-  if (!collaborators.map(u => u.id).includes(user.id)) {
-    collaborators.push(user);
-    project.collaborators = collaborators;
-  } else {
+  // Check if the user is already a collaborator
+  if (project.collaborators && project.collaborators.some(collaborator => collaborator.id === userToBeAdded.id)) {
     return res.status(409).send('User is already a collaborator');
   }
 
-  // Save the project
+  // Add the user as a collaborator
+  if (!project.collaborators) {
+    project.collaborators = [];
+  }
+
+  project.collaborators.push(userToBeAdded);
+
+  // Save the updated project
   await projectRepository.save(project);
 
   return res.status(200).send(project);
 });
 
-router.get('/user/projects', expressjwt(jwtProps), async (req: JWTRequest, res) => {
-  const userId = req.auth?.id;
+// Remove a collaborator
+router.delete('/project/:id/collaborator/:collaboratorId', expressjwt(jwtProps), async (req: JWTRequest, res) => {
+  const projectId = req.params.id;
+  const collaboratorId = req.params.collaboratorId;
 
-  // Get the Project Repository from the DataSource
-  const dataSource = await getDataSource();
-  const projectRepository = dataSource.getRepository(Project);
-  const userRepository = dataSource.getRepository(User);
+  // ... your remove collaborator logic using both projectId and collaboratorId ...
+});
 
-  const user = await userRepository.findOne({ where: { id: userId } });
 
-  if (!user) {
-    return res.status(404).send('User not found');
+router.patch('/project/:id/rename', expressjwt(jwtProps), async (req: JWTRequest, res) => {
+  const newTitle = req.body.newTitle;
+  const projectId = req.params.id;
+
+  if (!newTitle) {
+    return res.status(400).send('Title is required');
   }
 
-  const createdProjects = await projectRepository.find({ 
-    where: { creator: user },
-    select: ["id", "title"]
-  });
+  try {
+    // Get the DataSource and repositories
+    const dataSource = await getDataSource();
+    const userRepository = dataSource.getRepository(User);
+    const projectRepository = dataSource.getRepository(Project);
 
-  const collaboratorProjects = await projectRepository.createQueryBuilder("project")
-    .innerJoinAndSelect("project.collaborators", "user", "user.id = :uid", { uid: req.auth?.id })
-    .select(["project.id", "project.title"])
-    .getMany();
+    // Find the project
+    const project = await projectRepository.findOne({
+      where: { id: parseInt(projectId, 10) },
+      relations: ["creator"]
+    });
 
-    return res.status(200).json({ createdProjects, collaboratorProjects });
+    if (!project) {
+      return res.status(404).send('Project not found');
+    }
+
+    // Check if the user is the creator
+    if (req.auth?.id !== project.creator.id) {
+      return res.status(403).send('Unauthorized');
+    }
+
+    project.title = newTitle;
+
+    // Save the project
+    await projectRepository.save(project);
+
+    return res.status(200).send(project);
+  } catch (error) {
+    return res.status(500).send('An error occurred.');
+  }
 });
 
 const loadProject = async (projectId:number) => {
