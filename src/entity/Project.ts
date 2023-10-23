@@ -28,4 +28,10 @@ export class Project {
   @ManyToMany(() => User)
   @JoinTable()
   collaborators?: User[];
+
+  @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+  lastEdited: Date;
+
+  @ManyToOne(() => User)
+  lastEditor?: User;
 }
