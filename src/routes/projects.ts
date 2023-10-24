@@ -85,6 +85,33 @@ router.post('/project', expressjwt(jwtProps), async (req: JWTRequest, res) => {
 
 export type FilesByDepth = ProjectFile[][];
 
+router.get('/user/projects', expressjwt(jwtProps), async (req: JWTRequest, res) => {
+  const userId = req.auth?.id;
+
+  // Get the Project Repository from the DataSource
+  const dataSource = await getDataSource();
+  const projectRepository = dataSource.getRepository(Project);
+  const userRepository = dataSource.getRepository(User);
+
+  const user = await userRepository.findOne({ where: { id: userId } });
+
+  if (!user) {
+    return res.status(404).send('User not found');
+  }
+
+  const createdProjects = await projectRepository.find({ 
+    where: { creator: user },
+    select: ["id", "title"]
+  });
+
+  const collaboratorProjects = await projectRepository.createQueryBuilder("project")
+    .innerJoinAndSelect("project.collaborators", "user", "user.id = :uid", { uid: req.auth?.id })
+    .select(["project.id", "project.title"])
+    .getMany();
+
+    return res.status(200).json({ createdProjects, collaboratorProjects });
+});
+
 router.patch('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   try {
     const dataSource = await getDataSource();
