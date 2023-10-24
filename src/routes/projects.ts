@@ -65,6 +65,8 @@ router.post('/project', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   project.settings = (settings || {}) as ProjectSettings;
   project.openFilePath = openFilePath;
   project.creator = existingUser;
+  project.lastEditor = existingUser;
+  project.lastEdited = new Date();
   project.collaborators = [];
 
   await projectRepository.save(project);
@@ -172,7 +174,7 @@ router.patch('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) 
 
       let fileDepth = 0;
 
-      // Iterate over each filesByDepth level and check if its file have changed
+      // Iterate over each filesByDepth level and check if its files have changed
       for (const depthFiles of filesByDepth) {
         // Iterate over each file in the current depth level
         fileDepth = fileDepth + 1;
