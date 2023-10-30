@@ -31,6 +31,8 @@ interface UpdateProjectRequest extends CreateProjectRequest { }
 router.post('/project', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   const { title, settings, openFilePath, files, creator: creatorId } = req.body as CreateProjectRequest;
 
+  console.log('save new project');
+
   const token = req.headers.authorization?.replace('Bearer ', '');
 
   let decoded;
@@ -75,6 +77,8 @@ router.post('/project', expressjwt(jwtProps), async (req: JWTRequest, res) => {
 
   const newFiles:ProjectTreeFile[] = [];
 
+  console.log('FILES', files);
+
   for (const file of files) {
     const newFile = await saveFile(file, undefined, project, fileRepository, existingUser);
     newFiles.push(newFile);
@@ -103,7 +107,8 @@ router.get('/user/projects', expressjwt(jwtProps), async (req: JWTRequest, res) 
 
   const createdProjects = await projectRepository.find({ 
     where: { creator: user },
-    select: ["id", "title"]
+    relations: ["creator", "lastEditor"],
+    select: ["id", "title", "lastEdited", "lastEditor"]
   });
 
   const collaboratorProjects = await projectRepository.createQueryBuilder("project")
@@ -335,49 +340,44 @@ router.patch('/project/:id/collaborator', expressjwt(jwtProps), async (req: JWTR
 router.delete('/project/:id/collaborator/:collaboratorId', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   const projectId = req.params.id;
   const collaboratorId = req.params.collaboratorId;
-
-  // ... your remove collaborator logic using both projectId and collaboratorId ...
 });
 
+// Delete a project
+router.delete('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) => {
+  const projectId = parseInt(req.params.id);
+  console.log('deleting', projectId);
 
-router.patch('/project/:id/rename', expressjwt(jwtProps), async (req: JWTRequest, res) => {
-  const newTitle = req.body.newTitle;
-  const projectId = req.params.id;
+  const user = req.auth;
 
-  if (!newTitle) {
-    return res.status(400).send('Title is required');
+  const dataSource = await getDataSource();
+  const projectRepository = dataSource.getRepository(Project);
+
+  const project = await projectRepository.findOne({ 
+    where: { id: projectId },
+    relations: ["files", "files.parent", "files.creator", "files.editing", "files.lastEditor", "collaborators", "creator"]
+  });
+
+  // Check if the project exists
+  if (!project) {
+    return res.status(404).send('Project not found');
   }
 
+  // Check if the user is the creator
+  if (!user || user?.id !== project?.creator.id) {
+    return res.status(403).send('Unauthorized');
+  }
+
+  // Delete the project and related files
   try {
-    // Get the DataSource and repositories
-    const dataSource = await getDataSource();
-    const userRepository = dataSource.getRepository(User);
-    const projectRepository = dataSource.getRepository(Project);
-
-    // Find the project
-    const project = await projectRepository.findOne({
-      where: { id: parseInt(projectId, 10) },
-      relations: ["creator"]
-    });
-
-    if (!project) {
-      return res.status(404).send('Project not found');
-    }
-
-    // Check if the user is the creator
-    if (req.auth?.id !== project.creator.id) {
-      return res.status(403).send('Unauthorized');
-    }
-
-    project.title = newTitle;
-
-    // Save the project
-    await projectRepository.save(project);
-
-    return res.status(200).send(project);
+    // Delete all project files
+    await dataSource.manager.remove(File, project.files);
+    await projectRepository.remove(project);
+    return res.status(200).send('Project deleted');
   } catch (error) {
+    console.log('error', error);
     return res.status(500).send('An error occurred.');
   }
+
 });
 
 const loadProject = async (projectId:number) => {
@@ -399,6 +399,115 @@ const loadProject = async (projectId:number) => {
 
   return {...project, files: projectFiles};
 };
+
+router.post('/project/:id/duplicate', expressjwt(jwtProps), async (req: JWTRequest, res) => {
+  const projectId = parseInt(req.params.id);
+
+  console.log('req', req.body, req.params, req.auth);
+
+  // Ensure that the project ID is a number
+  if (isNaN(projectId)) {
+    return res.status(400).send('Invalid project ID');
+  }
+
+  // Get the Project Repository from the DataSource and find the project
+  const dataSource = await getDataSource();
+  const projectRepository = dataSource.getRepository(Project);
+  const project = await projectRepository.findOne({
+    where: { id: projectId },
+    relations: ["creator", "lastEditor", "collaborators"]
+  });
+
+  // Check if the project exists
+  if (!project) {
+    return res.status(404).send('Project not found');
+  }
+
+  console.log('project', project);
+
+  // Check if the user is the creator
+  if (!req.auth || req.auth?.id !== project.creator.id) {
+    return res.status(403).send('Unauthorized');
+  }
+
+  try {
+    // Create a new project
+    const newProject = new Project();
+    newProject.title = req.body.title || `Dupe of ${project.title}`;
+    newProject.settings = project.settings;
+    newProject.openFilePath = project.openFilePath;
+    newProject.creator = project.creator;
+    newProject.lastEditor = project.creator;
+    newProject.lastEdited = new Date();
+    newProject.collaborators = project.collaborators || [];
+
+    const newFiles:ProjectTreeFile[] = [];
+
+    // Save the new project
+    await projectRepository.save(newProject);
+
+    for (const file of (req.body.files || [])) {
+      const fileRepo = dataSource.getRepository(File);
+      let { id: originalId, ...copyFile } = file;
+      copyFile.parent = null;
+      const newFile = await saveFile(copyFile as ProjectTreeFile, undefined, newProject, fileRepo, project.creator, true);
+      newFiles.push(newFile);
+    }
+
+    return res.status(200).send(newProject);
+  } catch (error) {
+    console.log('yuh oh', error);
+    return res.status(500).send('An error occurred.');
+  }
+});
+
+router.patch('/project/:id/rename', expressjwt(jwtProps), async (req: JWTRequest, res) => {
+  const projectId = parseInt(req.params.id);
+
+  // Ensure that the project ID is a number
+  if (isNaN(projectId)) {
+    return res.status(400).send('Invalid project ID');
+  }
+
+  // Get the Project Repository from the DataSource and find the project
+  const dataSource = await getDataSource();
+  const projectRepository = dataSource.getRepository(Project);
+  const project = await projectRepository.findOne({
+    where: { id: projectId },
+    relations: ["creator"]
+  });
+
+  const newTitle = req.body.title;
+
+  // Check that a new title was provided.
+  if (!newTitle) {
+    return res.status(400).send('Title is required');
+  }
+
+  // Check if the project exists
+  if (!project) {
+    return res.status(404).send('Project not found');
+  }
+
+  // Check if the user is the creator
+  if (!req.auth || req.auth?.id !== project.creator.id) {
+    return res.status(403).send('Unauthorized');
+  }
+
+  try {
+    // Save the renamed project
+    project.title = newTitle;
+    project.lastEdited = new Date();
+    project.lastEditor = project.creator;
+    console.log('project', project);
+    await projectRepository.save(project);
+
+    return res.status(200).send(project);
+  } catch (error) {
+    console.log('wuh oh', error);
+    return res.status(500).send('An error occurred.');
+  }
+});
 
 router.get('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   const projectId = parseInt(req.params.id);

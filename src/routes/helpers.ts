@@ -13,7 +13,7 @@ type ProjectFile = ProjectTreeFile & {
 };
 
 // Helper function to save a file and its children recursively
-export async function saveFile(file:ProjectTreeFile, parent: File | null | undefined, project:Project, fileRepository:Repository<File>, user:User) {
+export async function saveFile(file:ProjectTreeFile, parent: File | null | undefined, project:Project, fileRepository:Repository<File>, user:User, forceNew?:true) {
   const newFile = new File();
   newFile.type = file.type;
   newFile.name = file.name;
@@ -26,19 +26,22 @@ export async function saveFile(file:ProjectTreeFile, parent: File | null | undef
   newFile.lastEditor = user;
   newFile.creator = file.creator || user;
   newFile.editing = undefined;
-  newFile.id = file.id;
+
+  if (!forceNew) {
+    newFile.id = file.id;
+  }
 
   console.log('saveFile saving file:', newFile.name, newFile.id, newFile.path, newFile.parent, newFile.project.id);
 
   await fileRepository.save(newFile);
 
-  console.log('saveFile saved file:', newFile.name, newFile.id, newFile.path, newFile.project.id);
+  console.log('saveFile saved file:', newFile.name, newFile.id, newFile.path, newFile.project.id, forceNew);
 
   // Recursively save children if they exist
   if (file.children) {
     for (const childFile of file.children) {
       console.log('saving child', childFile.path);
-      await saveFile(childFile, newFile, project, fileRepository, user);
+      await saveFile(childFile, newFile, project, fileRepository, user, forceNew);
     }
   }
 
