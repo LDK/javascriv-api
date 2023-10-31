@@ -31,8 +31,6 @@ interface UpdateProjectRequest extends CreateProjectRequest { }
 router.post('/project', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   const { title, settings, openFilePath, files, creator: creatorId } = req.body as CreateProjectRequest;
 
-  console.log('save new project');
-
   const token = req.headers.authorization?.replace('Bearer ', '');
 
   let decoded;
@@ -76,8 +74,6 @@ router.post('/project', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   project.files = [];
 
   const newFiles:ProjectTreeFile[] = [];
-
-  console.log('FILES', files);
 
   for (const file of files) {
     const newFile = await saveFile(file, undefined, project, fileRepository, existingUser);
@@ -280,7 +276,8 @@ router.patch('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) 
 });
 
 router.patch('/project/:id/collaborator', expressjwt(jwtProps), async (req: JWTRequest, res) => {
-  const { search, projectId } = req.body;
+  const { search } = req.body;
+  const projectId = req.params.id;
 
   // Ensure search text was provided
   if (!search) {
@@ -333,19 +330,60 @@ router.patch('/project/:id/collaborator', expressjwt(jwtProps), async (req: JWTR
   // Save the updated project
   await projectRepository.save(project);
 
-  return res.status(200).send(project);
+  return res.status(200).send({ success: project });
 });
 
 // Remove a collaborator
 router.delete('/project/:id/collaborator/:collaboratorId', expressjwt(jwtProps), async (req: JWTRequest, res) => {
-  const projectId = req.params.id;
-  const collaboratorId = req.params.collaboratorId;
+  try {
+    const projectId = parseInt(req.params.id, 10);
+    const collaboratorId = parseInt(req.params.collaboratorId, 10);
+
+    const dataSource = await getDataSource();
+    const projectRepository = dataSource.getRepository(Project);
+
+    const project = await projectRepository.findOne({
+      where: { id: projectId },
+      relations: ["collaborators", "creator"]
+    });
+
+    if (!project) {
+      return res.status(404).send('Project not found');
+    }
+
+    // Authorization: Ensure the requesting user is the creator of the project,
+    // or the collaborator themselves, opting to leave the project.
+
+    if (req.auth?.id !== project.creator.id && req.auth?.id !== collaboratorId) {
+      return res.status(403).send('Unauthorized');
+    }
+
+    const userRepository = dataSource.getRepository(User);
+    const collaborator = await userRepository.findOne({ where: { id: collaboratorId } });
+
+    if (!collaborator) {
+      return res.status(404).send('Collaborator user not found.');
+    }
+
+    if (!project.collaborators || !project.collaborators.some(user => user.id === collaboratorId)) {
+      return res.status(404).send('Collaborator not found on this project.');
+    }
+
+    // Remove the collaborator
+    project.collaborators = project.collaborators.filter(user => user.id !== collaboratorId);
+
+    await projectRepository.save(project);
+
+    res.json({ success: 'Collaborator removed successfully' });
+  } catch (error) {
+    console.error('Error removing collaborator:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
 });
 
 // Delete a project
 router.delete('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   const projectId = parseInt(req.params.id);
-  console.log('deleting', projectId);
 
   const user = req.auth;
 
@@ -374,7 +412,6 @@ router.delete('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res)
     await projectRepository.remove(project);
     return res.status(200).send('Project deleted');
   } catch (error) {
-    console.log('error', error);
     return res.status(500).send('An error occurred.');
   }
 
@@ -403,8 +440,6 @@ const loadProject = async (projectId:number) => {
 router.post('/project/:id/duplicate', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   const projectId = parseInt(req.params.id);
 
-  console.log('req', req.body, req.params, req.auth);
-
   // Ensure that the project ID is a number
   if (isNaN(projectId)) {
     return res.status(400).send('Invalid project ID');
@@ -422,8 +457,6 @@ router.post('/project/:id/duplicate', expressjwt(jwtProps), async (req: JWTReque
   if (!project) {
     return res.status(404).send('Project not found');
   }
-
-  console.log('project', project);
 
   // Check if the user is the creator
   if (!req.auth || req.auth?.id !== project.creator.id) {
@@ -456,7 +489,6 @@ router.post('/project/:id/duplicate', expressjwt(jwtProps), async (req: JWTReque
 
     return res.status(200).send(newProject);
   } catch (error) {
-    console.log('yuh oh', error);
     return res.status(500).send('An error occurred.');
   }
 });
@@ -499,12 +531,11 @@ router.patch('/project/:id/rename', expressjwt(jwtProps), async (req: JWTRequest
     project.title = newTitle;
     project.lastEdited = new Date();
     project.lastEditor = project.creator;
-    console.log('project', project);
+
     await projectRepository.save(project);
 
     return res.status(200).send(project);
   } catch (error) {
-    console.log('wuh oh', error);
     return res.status(500).send('An error occurred.');
   }
 });
