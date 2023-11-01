@@ -109,7 +109,9 @@ router.get('/user/projects', expressjwt(jwtProps), async (req: JWTRequest, res) 
 
   const collaboratorProjects = await projectRepository.createQueryBuilder("project")
     .innerJoinAndSelect("project.collaborators", "user", "user.id = :uid", { uid: req.auth?.id })
-    .select(["project.id", "project.title"])
+    .leftJoinAndSelect("project.creator", "creator")
+    .leftJoinAndSelect("project.lastEditor", "lastEditor")
+    .select(["project.id", "project.title", "project.lastEdited", "creator.id", "creator.username", "lastEditor.id", "lastEditor.username"])
     .getMany();
 
     return res.status(200).json({ createdProjects, collaboratorProjects });
