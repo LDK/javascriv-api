@@ -19,6 +19,10 @@ export class User {
   @Column({ select: false })
   email: string;
 
+  @Column({ type: 'json', nullable: true })
+  publishOptions?: { [key: string]: string | number | boolean };
+
   @Column({ select: false })
   passwordHash: string;
+
 }
