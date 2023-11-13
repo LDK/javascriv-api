@@ -33,10 +33,8 @@ router.post('/project', expressjwt(jwtProps), async (req: JWTRequest, res) => {
 
   const token = req.headers.authorization?.replace('Bearer ', '');
 
-  let decoded;
-
   try {
-    decoded = jwt.verify(token || '', process.env.SECRET_KEY || ''); 
+    jwt.verify(token || '', process.env.SECRET_KEY || ''); 
   } catch (err) {
     return res.status(401).send('Invalid token');
   }
@@ -95,7 +93,7 @@ router.get('/user/projects', expressjwt(jwtProps), async (req: JWTRequest, res) 
   const projectRepository = dataSource.getRepository(Project);
   const userRepository = dataSource.getRepository(User);
 
-  const user = await userRepository.findOne({ where: { id: userId } });
+  const user = await userRepository.findOne({ select: ["id"], where: { id: userId } });
 
   if (!user) {
     return res.status(404).send('User not found');
