@@ -5,6 +5,7 @@ import {
   Column,
   Unique
 } from 'typeorm';
+import { EditorFont } from '../components/javascriv-types/Editor/EditorFonts';
 
 @Entity()
 @Unique(["username", "email"])
@@ -21,6 +22,9 @@ export class User {
 
   @Column({ type: 'json', nullable: true })
   publishOptions?: { [key: string]: string | number | boolean };
+
+  @Column({ type: 'json', nullable: true })
+  fontOptions?: { [key: string]: EditorFont | number };
 
   @Column({ select: false })
   passwordHash: string;

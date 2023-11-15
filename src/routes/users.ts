@@ -6,6 +6,7 @@ import jwt from 'jsonwebtoken';
 import Mailgun from 'mailgun-js';
 import { QueryFailedError } from 'typeorm';
 import { expressjwt, Params, Request as JWTRequest } from "express-jwt";
+import { EditorFont } from '../components/javascriv-types/Editor/EditorFonts';
 
 const jwtProps:Params = { secret: process.env.SECRET_KEY as string, algorithms: ["HS256"] };
 
@@ -128,12 +129,14 @@ router.post('/user/login', async (req, res) => {
 });
 
 type UserPublishingOptions = { [key: string]: string | number | boolean };
+type UserFontOptions = { [key: string]: EditorFont | number };
 
 const maxUsernameLength = 20;
 
 type UserPatch = {
   username?: string;
   publishOptions?: UserPublishingOptions;
+  fontOptions?: UserFontOptions;
   newPassword?: string;
   newPasswordConfirm?: string;
   email?: string;
@@ -144,8 +147,6 @@ router.patch('/user', expressjwt(jwtProps), async (req: JWTRequest, res) => {
    * User id is taken from the JWT token, as users can only edit their own profile.
    * req.body should be an instance of UserPatch
    */
-
-  console.log('huh?');
 
   const token = req.headers.authorization?.replace('Bearer ', '');
 
@@ -161,7 +162,7 @@ router.patch('/user', expressjwt(jwtProps), async (req: JWTRequest, res) => {
 
     const user = await userRepository.findOne(
       { 
-        select: ['id', 'username', 'email', 'publishOptions'],
+        select: ['id', 'username', 'email', 'publishOptions', 'fontOptions'],
         where: { id: req.auth?.id } 
       });
 
@@ -175,9 +176,9 @@ router.patch('/user', expressjwt(jwtProps), async (req: JWTRequest, res) => {
       return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(str);
     }
     
-    const { username, publishOptions, newPassword, newPasswordConfirm, email } = req.body as UserPatch;
+    const { username, publishOptions, fontOptions, newPassword, newPasswordConfirm, email } = req.body as UserPatch;
 
-    if (!username && !publishOptions && !newPassword && !newPasswordConfirm && !email) {
+    if (!username && !publishOptions && !newPassword && !newPasswordConfirm && !email && !fontOptions) {
       return res.status(400).send('No information sent.');
     }
 
@@ -229,6 +230,10 @@ router.patch('/user', expressjwt(jwtProps), async (req: JWTRequest, res) => {
       user.publishOptions = publishOptions;
     }
 
+    if (fontOptions) {
+      user.fontOptions = fontOptions;
+    }
+
     if (newPassword) {
       if (!newPasswordConfirm) {
         return res.status(400).send('Missing password confirmation.');
@@ -251,6 +256,7 @@ router.patch('/user', expressjwt(jwtProps), async (req: JWTRequest, res) => {
       username: user.username,
       email: user.email,
       publishOptions: user.publishOptions,
+      fontOptions: user.fontOptions,
         // Signing a JWT using the secret key from the environment variables
       token: jwt.sign({ id: user.id, username: user.username }, process.env.SECRET_KEY as string, { expiresIn: '720h' })
     });
