@@ -48,4 +48,11 @@ export class File {
 
   @ManyToOne(() => User)
   lastEditor: User;
+
+  @ManyToOne(() => User)
+  lastEditing?: User;
+
+  @Column({ type: 'timestamp', default: () => 'CURRENT_TIMESTAMP' })
+  lastActive?: Date;
+
 }
