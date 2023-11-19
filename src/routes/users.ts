@@ -4,9 +4,11 @@ import bcrypt from 'bcrypt';
 import { getDataSource } from '../database';
 import jwt from 'jsonwebtoken';
 import Mailgun from 'mailgun-js';
-import { QueryFailedError } from 'typeorm';
+import { In, Not, QueryFailedError } from 'typeorm';
 import { expressjwt, Params, Request as JWTRequest } from "express-jwt";
 import { EditorFont } from '../components/javascriv-types/Editor/EditorFonts';
+import { File } from '../entity/File';
+import { Project } from '../entity/Project';
 
 const jwtProps:Params = { secret: process.env.SECRET_KEY as string, algorithms: ["HS256"] };
 
@@ -151,7 +153,7 @@ router.patch('/user', expressjwt(jwtProps), async (req: JWTRequest, res) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
 
   try {
-    jwt.verify(token || '', process.env.SECRET_KEY || ''); 
+    jwt.verify(token || '', process.env.SECRET_KEY || '');
   } catch (err) {
     return res.status(401).send('Invalid token');
   }
@@ -260,6 +262,101 @@ router.patch('/user', expressjwt(jwtProps), async (req: JWTRequest, res) => {
         // Signing a JWT using the secret key from the environment variables
       token: jwt.sign({ id: user.id, username: user.username }, process.env.SECRET_KEY as string, { expiresIn: '720h' })
     });
+
+  } catch (error) {
+    if (error instanceof QueryFailedError) {
+      return res.status(500).send(`Database Query Failed: ${error.message}`);
+    } else if (error instanceof Error) {
+      return res.status(400).send(error.message);
+    }
+  }
+});
+
+router.post('/user/editing', expressjwt(jwtProps), async (req: JWTRequest, res) => {
+  try {
+    // Accepts an array of file ids and a project id
+
+    const fileIds = req.body.fileIds as number[];
+
+    // Check for authenticated user
+
+    const token = req.headers.authorization?.replace('Bearer ', '');
+
+    jwt.verify(token || '', process.env.SECRET_KEY || '');
+
+    const userId = req.auth?.id as number;
+
+    const dataSource = await getDataSource();
+    const userRepository = dataSource.getRepository(User);
+    const user = await userRepository.findOne({ where: { id: userId }, select: ["id", "username", "passwordHash", "email", "publishOptions"] });
+
+    if (!user) {
+      return res.status(404).send('User not found.');
+    }
+
+    // Check for existence of project
+    const projectId = req.body.projectId as number;
+    const projectRepository = dataSource.getRepository(Project);
+
+    const project = await projectRepository.findOne({
+      where: { id: projectId },
+      relations: ["creator", "collaborators"],
+      select: ["id", "creator", "collaborators"]
+    });
+
+    if (!project) {
+      return res.status(404).send('Project not found.');
+    }
+
+    // Check for existence of files
+    const fileRepository = dataSource.getRepository(File);
+
+    const files = await fileRepository.find({
+      select: ["id", "lastEditing", "lastActive"],
+      relations: ["lastEditing"],
+      where: {
+        id: In<number>(fileIds || []),
+        project: { id: projectId }
+      }
+      });
+
+    // Check for user auth on project (creator or collaborator)
+
+    if (project.creator.id !== userId && !project.collaborators?.find((collaborator:User) => collaborator.id === userId)) {
+      return res.status(401).send('User is not authorized to edit this project.');
+    }
+
+    // Update the following fields on File:
+      // lastEditing: User
+      // lastActive: Date
+
+    const updateFileEditing = async (file:File, user:User) => {
+      file.lastEditing = user;
+      file.lastActive = new Date();
+      await fileRepository.save(file);
+    };
+
+    const clearFileEditing = async (file:File) => {
+      file.lastEditing = undefined;
+      file.lastActive = undefined;
+      await fileRepository.save(file);
+    }
+
+    await Promise.all(files.map(file => updateFileEditing(file, user)));
+
+    // For files with this project id that are not in the array of file ids, set:
+      // lastEditing: null
+      // lastActive: null
+
+    const filesLeftOut = await fileRepository.findBy({
+      project: { id: projectId },
+      lastEditing: { id: userId },
+      id: Not(In<number>(fileIds || []))
+    });
+
+    await Promise.all(filesLeftOut.map(file => clearFileEditing(file)));
+
+    return res.status(200).send('Editing status updated.');
 
   } catch (error) {
     if (error instanceof QueryFailedError) {

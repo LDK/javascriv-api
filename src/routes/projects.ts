@@ -7,7 +7,7 @@ import jwt from 'jsonwebtoken';
 import { expressjwt, Params, Request as JWTRequest } from "express-jwt";
 import { ProjectSettings } from '../components/javascriv-types/Project/ProjectTypes';
 import { areObjectsEqual, buildHierarchicalFiles, saveFile } from './helpers';
-import { QueryFailedError } from 'typeorm';
+import { Equal, IsNull, LessThan, MoreThan, Not, QueryFailedError } from 'typeorm';
 import { flattenProjectFiles, sortFilesByDepth } from './helpers/ProjectUtil';
 
 const jwtProps:Params = { secret: process.env.SECRET_KEY as string, algorithms: ["HS256"] };
@@ -564,5 +564,62 @@ router.get('/project/:id', expressjwt(jwtProps), async (req: JWTRequest, res) =>
   // Return the project
   return res.status(200).json(project);
 });
+
+router.get('/project/:projectId/locked-files', expressjwt(jwtProps), async (req: JWTRequest, res) => {
+  try {
+    const projectId = parseInt(req.params.projectId);
+
+    // Ensure that the project ID is a number
+    if (isNaN(projectId)) {
+      return res.status(400).send('Invalid project ID');
+    }
+
+    // Get the Project Repository from the DataSource
+    const project = await loadProject(projectId);
+
+    // Check if the project exists
+    if (!project) {
+      return res.status(404).send('Project not found');
+    }
+
+    const userId = req.auth?.id; // Assuming this is how you get the current user's ID
+
+    // Get the Project Repository from the DataSource
+    const dataSource = await getDataSource();
+    const userRepository = dataSource.getRepository(User);
+
+    const user = await userRepository.findOne({ select: ["id"], where: { id: userId } });
+
+    if (!user) {
+      return res.status(404).send('User not found');
+    }
+
+    const tenMinutesAgo = new Date(Date.now() - 600000); // 10 minutes ago
+
+    const fileRepository = dataSource.getRepository(File);
+
+    const activeFiles = await fileRepository.find({
+      select: ["id", "name", "path", "lastEdited", "lastEditor", "lastActive", "lastEditing"],
+      relations: ["lastEditor", "lastEditing"],
+      where: {
+        project: { id: projectId },
+        lastActive: MoreThan(tenMinutesAgo),
+        lastEditing: Not(IsNull()),
+      }
+    });
+
+    // locked files are the active files which have a lastEditing user that is not the current user
+    const lockedFiles = activeFiles.filter(file => file.lastEditing?.id !== user.id);
+
+    const lockedPaths = lockedFiles.map(file => file.path);
+
+    return res.status(200).json(lockedPaths.length ? lockedPaths : []);
+  } catch (error) {
+    console.error('Error fetching locked files:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+module.exports = router;
 
 export default router;
