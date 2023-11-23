@@ -62,8 +62,11 @@ router.post('/user/register', async (req, res) => {
       const data = {
         from: 'javaScriv <lemondropkid@gmail.com>',
         to: email,
-        subject: 'Welcome to Our App',
-        text: 'Thank you for registering at our app. We are glad to have you!'
+        subject: 'Welcome to javaScriv!',
+        text: `
+          Thank you for signing up for the javaScriv app.
+          Please visit https://javascriv.electric-bungalow.com to get started.
+        `
       };
     
       mailgun.messages().send(data, (error, body) => {
@@ -87,7 +90,7 @@ router.post('/user/register', async (req, res) => {
       client.sendEmail({
         "From": "javaScriv@electric-bungalow.com",
         "To": email,
-        "Subject": "Welcome to javaScriv!  Verify your account.",
+        "Subject": "Welcome to javaScriv!",
         "HtmlBody": `
           <strong>Thank you for signing up for the javaScriv app.</strong>
           <p>Please visit <a href="https://javascriv.electric-bungalow.com">https://javascriv.electric-bungalow.com</a> to get started.</p>
@@ -100,6 +103,107 @@ router.post('/user/register', async (req, res) => {
   }
 
   return res.status(201).send({...newUser, token});
+});
+
+router.post('/user/new-password', expressjwt(jwtProps), async (req: JWTRequest, res) => {
+  const { newPassword: password, newPasswordConfirm: passwordConfirm } = req.body;
+
+  if (!password || !passwordConfirm) {
+    return res.status(400).send('Missing password or password confirmation');
+  }
+
+  if (password !== passwordConfirm) {
+    return res.status(400).send('Password and password confirmation do not match.');
+  }
+
+  const dataSource = await getDataSource();
+  const userRepository = dataSource.getRepository(User);
+
+  const user = await userRepository.findOne(
+    { 
+      select: ['id', 'username', 'email', 'publishOptions', 'fontOptions'],
+      where: { id: req.auth?.id } 
+    }
+  );
+
+  if (!user || user.id !== req.auth?.id) {
+    return res.status(404).send('User not found.');
+  }
+
+  const passwordHash = await bcrypt.hash(password, 10);
+
+  user.passwordHash = passwordHash;
+  userRepository.save(user);
+
+  const token = jwt.sign({ id: user.id, username: user.username }, process.env.SECRET_KEY as string, { expiresIn: '720h' });
+
+  return res.status(200).json({ ...user, token });
+});
+
+router.post('/user/forgot-password', async (req, res) => {
+  const { email } = req.body;
+
+  if (!email) {
+    return res.status(400).send('Missing e-mail');
+  }
+
+  const dataSource = await getDataSource();
+  const userRepository = dataSource.getRepository(User);
+
+  const user = await userRepository.findOne({ where: { email }, select: ["id", "username", "passwordHash", "email", "publishOptions"] });
+
+  if (!user) {
+    return res.status(404).send('User not found.');
+  }
+
+  // Signing a JWT using the secret key from the environment variables
+  const token = jwt.sign({ id: user.id, username: user.username }, process.env.SECRET_KEY as string, { expiresIn: '720h' });
+
+  const mailService = process.env.MAIL_SERVICE as string;
+
+  switch (mailService) {
+    case 'mailgun':
+      // Initialize mailgun
+      const mailgun = Mailgun({ apiKey: process.env.MAILGUN_API_KEY as string, domain: process.env.MAILGUN_DOMAIN as string });
+
+      const data = {
+        from: 'javaScriv <lemondropkid@gmail.com>',
+        to: email,
+        subject: 'Reset your javaScriv password',
+        text: `Please visit https://javascriv.electric-bungalow.com/reset-password/${token} to reset your password.`
+      };
+
+      mailgun.messages().send(data, (error, body) => {
+        if (error) {
+          console.error('Failed to send email', error);
+        } else {
+          console.log('Email sent', body);
+        }
+      });
+    
+    break;
+
+    case 'postmark':
+      // Initialize postmark
+      // Require:
+      var postmark = require("postmark");
+
+      // Send an email:
+      var client = new postmark.ServerClient(process.env.POSTMARK_API_KEY as string);
+
+      client.sendEmail({
+        from: 'javaScriv <lemondropkid@gmail.com>',
+        to: email,
+        subject: 'Reset your javaScriv password',
+        htmlBody: `
+          <p>Please visit <a href="https://javascriv.electric-bungalow.com/reset-password/${token}">https://javascriv.electric-bungalow.com/reset-password/${token}</a> to reset your password.</p>
+        `,
+      });
+    break;
+  }
+
+  return res.status(200).send('Password reset link sent.');
+
 });
 
 router.post('/user/login', async (req, res) => {
@@ -170,8 +274,6 @@ router.patch('/user', expressjwt(jwtProps), async (req: JWTRequest, res) => {
         select: ['id', 'username', 'email', 'publishOptions', 'fontOptions'],
         where: { id: req.auth?.id } 
       });
-
-    console.log('user', user, req.auth?.id);
 
     if (!user || user.id !== req.auth?.id) {
       return res.status(404).send('User not found.');
