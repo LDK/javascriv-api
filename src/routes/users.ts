@@ -88,8 +88,11 @@ router.post('/user/register', async (req, res) => {
         "From": "javaScriv@electric-bungalow.com",
         "To": email,
         "Subject": "Welcome to javaScriv!  Verify your account.",
-        "HtmlBody": "<strong>Hello</strong> dear Postmark user.",
-        "TextBody": "Hello from Postmark!",
+        "HtmlBody": `
+          <strong>Thank you for signing up for the javaScriv app.</strong>
+          <p>Please visit <a href="https://javascriv.electric-bungalow.com">https://javascriv.electric-bungalow.com</a> to get started.</p>
+        `,
+        "TextBody": "Thank you for signing up for the javaScriv app.  Please visit https://javascriv.electric-bungalow.com to get started.",
         "MessageStream": "outbound"
       });
 
