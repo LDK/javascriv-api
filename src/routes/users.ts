@@ -400,19 +400,26 @@ router.post('/user/editing', expressjwt(jwtProps), async (req: JWTRequest, res) 
     }
 
     // Check for existence of project
-    const projectId = req.body.projectId as number;
+    const projectId = req.body.projectId ? req.body.ProjectId as number : null;
     const projectRepository = dataSource.getRepository(Project);
 
-    const project = await projectRepository.findOne({
-      where: { id: projectId },
-      relations: ["creator", "collaborators"],
-      select: ["id", "creator", "collaborators"]
-    });
+    if (projectId) {
+      const project = await projectRepository.findOne({
+        where: { id: projectId },
+        relations: ["creator", "collaborators"],
+        select: ["id", "creator", "collaborators"]
+      });
 
-    if (!project) {
-      return res.status(404).send('Project not found.');
+      if (!project) {
+        return res.status(404).send('Project not found.');
+      }
+
+      // Check for user auth on project (creator or collaborator)
+
+      if (project.creator.id !== userId && !project.collaborators?.find((collaborator:User) => collaborator.id === userId)) {
+        return res.status(401).send('User is not authorized to edit this project.');
+      }
     }
-
     // Check for existence of files
     const fileRepository = dataSource.getRepository(File);
 
@@ -421,15 +428,9 @@ router.post('/user/editing', expressjwt(jwtProps), async (req: JWTRequest, res) 
       relations: ["lastEditing"],
       where: {
         id: In<number>(fileIds || []),
-        project: { id: projectId }
+        project: { id: projectId || undefined }
       }
       });
-
-    // Check for user auth on project (creator or collaborator)
-
-    if (project.creator.id !== userId && !project.collaborators?.find((collaborator:User) => collaborator.id === userId)) {
-      return res.status(401).send('User is not authorized to edit this project.');
-    }
 
     // Update the following fields on File:
       // lastEditing: User
@@ -454,7 +455,7 @@ router.post('/user/editing', expressjwt(jwtProps), async (req: JWTRequest, res) 
       // lastActive: null
 
     const filesLeftOut = await fileRepository.findBy({
-      project: { id: projectId },
+      project: projectId? { id: projectId } : undefined,
       lastEditing: { id: userId },
       id: Not(In<number>(fileIds || []))
     });
